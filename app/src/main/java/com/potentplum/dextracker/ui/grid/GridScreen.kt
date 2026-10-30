@@ -1,5 +1,8 @@
 package com.potentplum.dextracker.ui.grid
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,16 +18,37 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,8 +56,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,10 +72,12 @@ import com.potentplum.dextracker.domain.dexLabel
 import com.potentplum.dextracker.ui.components.DexInset
 import com.potentplum.dextracker.ui.components.DexScaffold
 import com.potentplum.dextracker.ui.components.DexScreen
+import com.potentplum.dextracker.ui.components.DexSearchField
+import com.potentplum.dextracker.ui.components.DexSegmentedControl
 import com.potentplum.dextracker.ui.components.DexTab
-import com.potentplum.dextracker.ui.components.Pokeball
 import com.potentplum.dextracker.ui.components.PokeballLoader
 import com.potentplum.dextracker.ui.components.ScreenMessage
+import com.potentplum.dextracker.ui.components.ShellIconButton
 import com.potentplum.dextracker.ui.theme.Bezel
 import com.potentplum.dextracker.ui.theme.BezelLight
 import com.potentplum.dextracker.ui.theme.BezelSilver
@@ -60,40 +89,99 @@ import com.potentplum.dextracker.ui.theme.Screen
 import com.potentplum.dextracker.ui.theme.ScreenDeep
 import com.potentplum.dextracker.ui.theme.ScreenGlow
 import com.potentplum.dextracker.ui.theme.ScreenLine
+import com.potentplum.dextracker.ui.theme.ScreenText
 import com.potentplum.dextracker.ui.theme.ScreenTextDim
+import java.time.LocalDate
 
 @Composable
 fun GridScreen(viewModel: GridViewModel, onPokemonClick: (Int) -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    GridContent(
-        state = state,
-        onSelectGeneration = viewModel::selectGeneration,
-        onRetry = viewModel::syncSpecies,
-        onPokemonClick = onPokemonClick,
-    )
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collect { snackbar.showSnackbar(it) }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri: Uri? -> uri?.let(viewModel::exportTo) }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? -> uri?.let(viewModel::importFrom) }
+
+    val actions = remember(viewModel) {
+        GridActions(
+            onSelectScope = viewModel::selectScope,
+            onSelectFilter = viewModel::selectFilter,
+            onQueryChange = viewModel::setQuery,
+            onClearFilters = viewModel::clearFilters,
+            onRetry = viewModel::syncSpecies,
+            onPokemonClick = onPokemonClick,
+            onExport = { exportLauncher.launch("pokedex-tracker-backup-${LocalDate.now()}.json") },
+            // Some file managers label .json files as plain text or a generic binary.
+            onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
+            onToggleRegionalForms = viewModel::setIncludeRegionalForms,
+        )
+    }
+    GridContent(state, actions, snackbar)
 }
+
+class GridActions(
+    val onSelectScope: (Generation?) -> Unit,
+    val onSelectFilter: (CaughtFilter) -> Unit,
+    val onQueryChange: (String) -> Unit,
+    val onClearFilters: () -> Unit,
+    val onRetry: () -> Unit,
+    val onPokemonClick: (Int) -> Unit,
+    val onExport: () -> Unit,
+    val onImport: () -> Unit,
+    val onToggleRegionalForms: (Boolean) -> Unit,
+)
 
 @Composable
 fun GridContent(
     state: GridUiState,
-    onSelectGeneration: (Generation) -> Unit,
-    onRetry: () -> Unit,
-    onPokemonClick: (Int) -> Unit,
+    actions: GridActions,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
-    DexScaffold(title = "Pokédex Tracker") {
-        CaughtCounter(state)
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Generation.entries.forEach { gen ->
-                DexTab(
-                    text = gen.label,
-                    selected = gen == state.generation,
-                    onClick = { onSelectGeneration(gen) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+    // Hoisted so the position survives a trip to a detail page and back.
+    val gridState = rememberLazyGridState()
+    val scrolled by remember { derivedStateOf { gridState.firstVisibleItemIndex > 0 } }
+
+    // Only a real change of view resets the scroll. Coming back from a detail page
+    // re-runs this effect with the same key, and must keep the user where they were.
+    val viewKey = "${state.scope}|${state.filter}|${state.query.trim()}"
+    var lastViewKey by rememberSaveable { mutableStateOf(viewKey) }
+    LaunchedEffect(viewKey) {
+        if (viewKey != lastViewKey) {
+            lastViewKey = viewKey
+            gridState.scrollToItem(0)
         }
-        Spacer(Modifier.height(4.dp))
+    }
+
+    DexScaffold(
+        title = "Pokédex Tracker",
+        compact = scrolled,
+        actions = { OverflowMenu(state.includeRegionalForms, actions) },
+        snackbarHostState = snackbarHostState,
+    ) {
+        NationalCounter(state)
+        Spacer(Modifier.height(8.dp))
+        DexSearchField(
+            query = state.query,
+            onQueryChange = actions.onQueryChange,
+            placeholder = "Find a Pokémon: name or #",
+            contentDescription = "Search Pokémon by name or number",
+            // Pressing search with a single result opens it straight away.
+            onSearch = { state.pokemon.singleOrNull()?.let { actions.onPokemonClick(it.dex) } },
+        )
+        Spacer(Modifier.height(8.dp))
+        GenerationTabs(state, actions.onSelectScope)
+        DexSegmentedControl(
+            options = CaughtFilter.entries,
+            selected = state.filter,
+            label = { it.label },
+            onSelect = actions.onSelectFilter,
+        )
+        Spacer(Modifier.height(8.dp))
         DexInset(
             Modifier
                 .fillMaxWidth()
@@ -101,14 +189,19 @@ fun GridContent(
                 .padding(bottom = 12.dp),
         ) {
             when {
-                state.pokemon.isNotEmpty() -> PokemonGrid(state, onPokemonClick)
+                state.pokemon.isNotEmpty() -> PokemonGrid(state.pokemon, gridState, actions.onPokemonClick)
+                state.searching || state.filter != CaughtFilter.ALL -> EmptyResults(
+                    state = state,
+                    onClear = actions.onClearFilters,
+                    modifier = Modifier.align(Alignment.Center),
+                )
                 state.syncing -> PokeballLoader("Downloading Pokédex data…", Modifier.align(Alignment.Center))
                 else -> DexScreen(Modifier.align(Alignment.Center)) {
                     ScreenMessage(
                         title = "No signal",
                         body = "Couldn't reach PokeAPI. The Pokédex is downloaded once, then works offline.",
                         actionLabel = "Retry",
-                        onAction = onRetry,
+                        onAction = actions.onRetry,
                     )
                 }
             }
@@ -116,45 +209,173 @@ fun GridContent(
     }
 }
 
+/** National Dex progress, always visible whatever tab is selected. */
 @Composable
-private fun CaughtCounter(state: GridUiState) {
+private fun NationalCounter(state: GridUiState) {
+    val national = state.national
+    val percent = "%.1f%%".format(national.fraction * 100)
     DexScreen(Modifier.fillMaxWidth(), contentPadding = 10.dp, showGrid = false) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .semantics(mergeDescendants = true) {},
+                .semantics(mergeDescendants = true) {
+                    contentDescription =
+                        "National Dex: ${national.caught} of ${national.total} caught, $percent"
+                },
         ) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("NATIONAL DEX", style = DexText.ScreenSmall, color = ScreenTextDim)
+                Spacer(Modifier.weight(1f))
+                Text(percent, style = DexText.ScreenSmall, color = ScreenTextDim)
+            }
             Text(
-                text = "${state.generation.label.uppercase()} – ${state.caught} / ${state.total} CAUGHT",
+                text = "${national.caught} / ${national.total} CAUGHT",
                 style = DexText.ScreenLarge,
                 color = ScreenGlow,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
             )
             Spacer(Modifier.height(6.dp))
-            val progress = if (state.total == 0) 0f else state.caught / state.total.toFloat()
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(CircleShape)
-                    .background(ScreenLine),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(progress)
-                        .height(6.dp)
-                        .clip(CircleShape)
-                        .background(ScreenGlow),
-                )
-            }
+            ProgressBar(national.fraction)
         }
     }
 }
 
 @Composable
-private fun PokemonGrid(state: GridUiState, onPokemonClick: (Int) -> Unit) {
-    val gridState = rememberLazyGridState()
-    LaunchedEffect(state.generation) { gridState.scrollToItem(0) }
+private fun ProgressBar(fraction: Float) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(CircleShape)
+            .background(ScreenLine),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(fraction)
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(ScreenGlow),
+        )
+    }
+}
+
+/** "All" plus one tab per generation, each with its own caught count; scrolls sideways. */
+@Composable
+private fun GenerationTabs(state: GridUiState, onSelect: (Generation?) -> Unit) {
+    val tabs = listOf(state.national) + state.generations
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.scope) {
+        val index = tabs.indexOfFirst { it.generation == state.scope }
+        if (index >= 0) listState.animateScrollToItem((index - 1).coerceAtLeast(0))
+    }
+    LazyRow(
+        state = listState,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        items(tabs, key = { it.generation?.number ?: 0 }) { progress ->
+            DexTab(
+                text = progress.label,
+                subtitle = "${progress.caught}/${progress.total}" + if (progress.complete) " ✓" else "",
+                // While searching, results span every generation, so no tab is active.
+                selected = progress.generation == state.scope && !state.searching,
+                onClick = { onSelect(progress.generation) },
+                modifier = Modifier
+                    .width(if (progress.generation == null) 88.dp else 80.dp)
+                    .semantics {
+                        contentDescription = "${progress.label}, ${progress.caught} of ${progress.total} caught"
+                    },
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyResults(state: GridUiState, onClear: () -> Unit, modifier: Modifier = Modifier) {
+    val scopeName = if (state.scope == null) "National Dex" else state.scope.label
+    DexScreen(modifier) {
+        when {
+            !state.searching && state.filter == CaughtFilter.MISSING -> ScreenMessage(
+                title = "$scopeName complete!",
+                body = "Every Pokémon here is registered. Nothing left to catch.",
+            )
+            !state.searching && state.filter == CaughtFilter.CAUGHT -> ScreenMessage(
+                title = "Nothing caught yet",
+                body = "Open a Pokémon and add a card to register it.",
+                actionLabel = "Show all",
+                onAction = onClear,
+            )
+            else -> ScreenMessage(
+                title = "No matches",
+                body = "No Pokémon matches \"${state.query.trim()}\"" +
+                    if (state.filter != CaughtFilter.ALL) " in ${state.filter.label.lowercase()}." else ".",
+                actionLabel = "Clear search",
+                onAction = onClear,
+            )
+        }
+    }
+}
+
+@Composable
+private fun OverflowMenu(includeRegionalForms: Boolean, actions: GridActions) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        ShellIconButton(Icons.Rounded.MoreVert, contentDescription = "More options", onClick = { expanded = true })
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = Screen,
+        ) {
+            MenuItem("Back up collection", Icons.Rounded.FileUpload) {
+                expanded = false
+                actions.onExport()
+            }
+            MenuItem("Restore from backup", Icons.Rounded.FileDownload) {
+                expanded = false
+                actions.onImport()
+            }
+            HorizontalDivider(color = ScreenLine)
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("Count regional forms", style = DexText.ScreenSmall.copy(fontSize = 13.sp), color = ScreenText)
+                        Text(
+                            "Alolan, Galarian, Hisuian and Paldean cards count toward the base Pokémon",
+                            style = DexText.ScreenSmall.copy(fontSize = 11.sp),
+                            color = ScreenTextDim,
+                        )
+                    }
+                },
+                leadingIcon = {
+                    Icon(
+                        if (includeRegionalForms) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+                        contentDescription = null,
+                        tint = if (includeRegionalForms) DexYellow else ScreenTextDim,
+                    )
+                },
+                onClick = { actions.onToggleRegionalForms(!includeRegionalForms) },
+                modifier = Modifier.semantics {
+                    contentDescription = "Count regional forms, " + if (includeRegionalForms) "on" else "off"
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MenuItem(label: String, icon: ImageVector, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, style = DexText.ScreenSmall.copy(fontSize = 13.sp), color = ScreenText) },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = ScreenGlow) },
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun PokemonGrid(
+    pokemon: List<PokemonWithCount>,
+    gridState: LazyGridState,
+    onPokemonClick: (Int) -> Unit,
+) {
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Adaptive(minSize = 96.dp),
@@ -163,8 +384,8 @@ private fun PokemonGrid(state: GridUiState, onPokemonClick: (Int) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(state.pokemon, key = { it.dex }) { pokemon ->
-            PokemonTile(pokemon, onClick = { onPokemonClick(pokemon.dex) })
+        items(pokemon, key = { it.dex }) { entry ->
+            PokemonTile(entry, onClick = { onPokemonClick(entry.dex) })
         }
     }
 }
@@ -187,7 +408,7 @@ private fun PokemonTile(pokemon: PokemonWithCount, onClick: () -> Unit) {
     }
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
+            .aspectRatio(0.84f)
             .clip(shape)
             .background(
                 if (collected) Brush.verticalGradient(listOf(Screen, ScreenDeep))
@@ -205,23 +426,29 @@ private fun PokemonTile(pokemon: PokemonWithCount, onClick: () -> Unit) {
             alpha = if (collected) 1f else 0.45f,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 14.dp),
+                .padding(start = 8.dp, end = 8.dp, top = 14.dp, bottom = 22.dp),
         )
         Text(
             text = pokemon.dex.dexLabel(),
             style = DexText.ScreenSmall.copy(fontSize = 11.sp),
             color = if (collected) ScreenGlow else ScreenTextDim,
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 8.dp, bottom = 6.dp),
+                .align(Alignment.TopStart)
+                .padding(start = 8.dp, top = 6.dp),
+        )
+        Text(
+            text = pokemon.name,
+            style = DexText.ScreenSmall.copy(fontSize = 11.sp),
+            color = if (collected) ScreenText else ScreenTextDim,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 6.dp),
         )
         if (collected) {
-            Pokeball(
-                18.dp,
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 6.dp, bottom = 6.dp),
-            )
             CountBadge(
                 count = pokemon.cardCount,
                 modifier = Modifier

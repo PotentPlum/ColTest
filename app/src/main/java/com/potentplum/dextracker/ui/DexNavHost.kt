@@ -29,7 +29,9 @@ fun DexNavHost() {
     NavHost(navController = nav, startDestination = Routes.GRID) {
         composable(Routes.GRID) {
             GridScreen(
-                viewModel = containerViewModel { GridViewModel(it.pokedexRepository) },
+                viewModel = containerViewModel {
+                    GridViewModel(it.pokedexRepository, it.backupRepository, it.settingsRepository)
+                },
                 onPokemonClick = { dex -> nav.navigate(Routes.detail(dex)) { launchSingleTop = true } },
             )
         }
@@ -44,9 +46,10 @@ fun DexNavHost() {
         composable(Routes.ADD_CARD, arguments = dexArg) { entry ->
             val dex = entry.arguments!!.getInt("dex")
             AddCardScreen(
-                viewModel = containerViewModel { AddCardViewModel(dex, it.pokedexRepository, it.cardRepository) },
+                viewModel = containerViewModel {
+                    AddCardViewModel(dex, it.pokedexRepository, it.cardRepository, it.settingsRepository)
+                },
                 onBack = { nav.popBackStack() },
-                onAdded = { nav.popBackStack() },
             )
         }
     }

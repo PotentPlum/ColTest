@@ -6,10 +6,19 @@ import com.potentplum.dextracker.data.remote.CardDto
 import com.potentplum.dextracker.data.remote.TcgApiService
 import com.potentplum.dextracker.domain.CardRules
 import com.potentplum.dextracker.domain.CardTraits
+import com.potentplum.dextracker.domain.Generation
 import com.potentplum.dextracker.domain.TcgCard
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/** What adding a card meant for the collection, so the UI can celebrate the right moments. */
+data class AddResult(
+    /** The first card for this Pokémon: it's now caught. */
+    val newCatch: Boolean,
+    /** Set when this catch completed the Pokémon's generation. */
+    val completedGeneration: Generation?,
+)
 
 class CardRepository(
     private val api: TcgApiService,
@@ -26,8 +35,9 @@ class CardRepository(
     /**
      * Every valid card printed for a Dex entry. Queries by National Dex number rather than
      * name so "Charizard ex", "Dark Charizard" etc. are included and names with punctuation
-     * (Farfetch'd, Mr. Mime, Nidoran♀) need no escaping. The rules engine then drops
-     * regional forms, TAG TEAMs and non-Pokémon supertypes.
+     * (Farfetch'd, Mr. Mime, Nidoran♀) need no escaping. The rules engine then drops TAG TEAMs
+     * and non-Pokémon supertypes, and flags regional forms so callers can apply the user's
+     * setting without a new query.
      */
     suspend fun cardsFor(dex: Int, forceRefresh: Boolean = false): List<TcgCard> {
         if (!forceRefresh) cacheLock.withLock { sessionCache[dex] }?.let { return it }
@@ -43,14 +53,17 @@ class CardRepository(
         }
 
         val cards = all
-            .filter { CardRules.isAllowed(CardTraits(it.name, it.supertype, it.subtypes)) }
+            .filter { CardRules.isAllowed(it.traits()) }
             .distinctBy { it.id }
-            .map { it.toDomain() }
+            .map { it.toDomain(regionalForm = CardRules.isRegionalForm(it.traits())) }
         cacheLock.withLock { sessionCache[dex] = cards }
         return cards
     }
 
-    suspend fun addToCollection(dex: Int, card: TcgCard) {
+    suspend fun isOwned(cardId: String): Boolean = dao.get(cardId) != null
+
+    suspend fun addToCollection(dex: Int, card: TcgCard): AddResult {
+        val newCatch = dao.countForDex(dex) == 0
         dao.insert(
             OwnedCardEntity(
                 cardId = card.id,
@@ -67,11 +80,25 @@ class CardRepository(
                 addedAt = System.currentTimeMillis(),
             )
         )
+        val generation = Generation.forDex(dex)
+        val completed = newCatch &&
+            dao.countCaughtBetween(generation.dexRange.first, generation.dexRange.last) >= generation.size
+        return AddResult(newCatch, if (completed) generation else null)
     }
 
-    suspend fun removeFromCollection(cardId: String) = dao.delete(cardId)
+    /** Removes a card and returns what was stored, so the removal can be undone. */
+    suspend fun removeFromCollection(cardId: String): OwnedCardEntity? {
+        val removed = dao.get(cardId)
+        dao.delete(cardId)
+        return removed
+    }
 
-    private fun CardDto.toDomain() = TcgCard(
+    /** Puts back a card removed with [removeFromCollection], keeping its original date. */
+    suspend fun restore(card: OwnedCardEntity) = dao.insert(card)
+
+    private fun CardDto.traits() = CardTraits(name, supertype, subtypes)
+
+    private fun CardDto.toDomain(regionalForm: Boolean) = TcgCard(
         id = id,
         name = name,
         number = number,
@@ -82,6 +109,7 @@ class CardRepository(
         releaseDate = set.releaseDate,
         imageSmall = images.small,
         imageLarge = images.large,
+        regionalForm = regionalForm,
     )
 
     private companion object {

@@ -1,20 +1,19 @@
 package com.potentplum.dextracker.ui.addcard
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,18 +28,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,41 +48,38 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.potentplum.dextracker.domain.TcgCard
 import com.potentplum.dextracker.ui.components.CardDetailDialog
-import com.potentplum.dextracker.ui.components.DexButton
-import com.potentplum.dextracker.ui.components.DexButtonStyle
+import com.potentplum.dextracker.ui.components.Celebration
+import com.potentplum.dextracker.ui.components.CelebrationBanner
 import com.potentplum.dextracker.ui.components.DexInset
 import com.potentplum.dextracker.ui.components.DexScaffold
 import com.potentplum.dextracker.ui.components.DexScreen
+import com.potentplum.dextracker.ui.components.DexSearchField
 import com.potentplum.dextracker.ui.components.PokeballLoader
+import com.potentplum.dextracker.ui.components.ScreenButton
 import com.potentplum.dextracker.ui.components.ScreenMessage
 import com.potentplum.dextracker.ui.components.TcgCardImage
-import com.potentplum.dextracker.ui.theme.Bezel
-import com.potentplum.dextracker.ui.theme.BezelSilver
-import com.potentplum.dextracker.ui.theme.BezelSilverDark
 import com.potentplum.dextracker.ui.theme.DexText
 import com.potentplum.dextracker.ui.theme.DexYellow
 import com.potentplum.dextracker.ui.theme.Ink
 import com.potentplum.dextracker.ui.theme.Screen
-import com.potentplum.dextracker.ui.theme.ScreenDeep
 import com.potentplum.dextracker.ui.theme.ScreenGlow
 import com.potentplum.dextracker.ui.theme.ScreenLine
 import com.potentplum.dextracker.ui.theme.ScreenText
 import com.potentplum.dextracker.ui.theme.ScreenTextDim
+import kotlinx.coroutines.launch
 
 private const val CARD_ASPECT = 0.716f
 
@@ -93,44 +87,89 @@ private const val CARD_ASPECT = 0.716f
 fun AddCardScreen(
     viewModel: AddCardViewModel,
     onBack: () -> Unit,
-    onAdded: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    var celebration by remember { mutableStateOf<Celebration?>(null) }
+    val haptics = LocalHapticFeedback.current
+
     LaunchedEffect(viewModel) {
-        viewModel.added.collect { onAdded() }
+        viewModel.changes.collect { change ->
+            haptics.performHapticFeedback(
+                if (change is CollectionChange.Added && change.newCatch) HapticFeedbackType.LongPress
+                else HapticFeedbackType.TextHandleMove,
+            )
+            if (change is CollectionChange.Added && change.newCatch) celebration = change.toCelebration()
+            // Each change gets its own Undo, so replace any snackbar still showing.
+            snackbar.currentSnackbarData?.dismiss()
+            launch {
+                val result = snackbar.showSnackbar(
+                    message = change.message(),
+                    actionLabel = "Undo",
+                    duration = SnackbarDuration.Short,
+                )
+                if (result == SnackbarResult.ActionPerformed) viewModel.undo(change)
+            }
+        }
     }
     val actions = remember(viewModel) {
         AddCardActions(
             onQueryChange = viewModel::setQuery,
             onSelectSet = viewModel::selectSet,
             onToggleSort = viewModel::toggleSort,
-            onSelectCard = viewModel::select,
-            onConfirm = viewModel::confirmAdd,
+            onToggleCard = viewModel::toggle,
             onRetry = { viewModel.load(forceRefresh = true) },
         )
     }
-    AddCardContent(state, actions, onBack)
+    AddCardContent(
+        state = state,
+        actions = actions,
+        onBack = onBack,
+        snackbarHostState = snackbar,
+        celebration = celebration,
+        onCelebrationDone = { celebration = null },
+    )
+}
+
+private fun CollectionChange.message(): String {
+    val label = "${card.setName} #${card.number}"
+    return when (this) {
+        is CollectionChange.Added -> "Added $label"
+        is CollectionChange.Removed -> "Removed $label"
+    }
+}
+
+private fun CollectionChange.Added.toCelebration(): Celebration {
+    val who = pokemonName.ifBlank { card.name }
+    return when (val gen = completedGeneration) {
+        null -> Celebration("Gotcha!", "$who was registered in your Pokédex.")
+        else -> Celebration("${gen.label} complete!", "$who was the last one. All ${gen.size} are registered!")
+    }
 }
 
 class AddCardActions(
     val onQueryChange: (String) -> Unit,
     val onSelectSet: (setId: String?) -> Unit,
     val onToggleSort: () -> Unit,
-    val onSelectCard: (TcgCard?) -> Unit,
-    val onConfirm: () -> Unit,
+    val onToggleCard: (TcgCard) -> Unit,
     val onRetry: () -> Unit,
 )
 
 @Composable
-fun AddCardContent(state: AddCardUiState, actions: AddCardActions, onBack: () -> Unit) {
+fun AddCardContent(
+    state: AddCardUiState,
+    actions: AddCardActions,
+    onBack: () -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    celebration: Celebration? = null,
+    onCelebrationDone: () -> Unit = {},
+) {
     var preview by remember { mutableStateOf<TcgCard?>(null) }
-
-    // Back first dismisses the confirmation, then leaves the screen.
-    BackHandler(enabled = state.selected != null) { actions.onSelectCard(null) }
 
     DexScaffold(
         title = if (state.pokemonName.isBlank()) "Add card" else "Add ${state.pokemonName} card",
         onBack = onBack,
+        snackbarHostState = snackbarHostState,
     ) {
         Controls(state, actions)
         Spacer(Modifier.height(8.dp))
@@ -171,19 +210,18 @@ fun AddCardContent(state: AddCardUiState, actions: AddCardActions, onBack: () ->
                         )
                         else -> ResultsGrid(
                             state = state,
-                            onCardClick = actions.onSelectCard,
+                            onCardClick = actions.onToggleCard,
                             onCardLongClick = { preview = it },
                         )
                     }
                 }
             }
-            ConfirmOverlay(
-                selected = state.selected,
-                ownedIds = state.ownedIds,
-                onPreview = { preview = it },
-                onCancel = { actions.onSelectCard(null) },
-                onConfirm = actions.onConfirm,
-                modifier = Modifier.align(Alignment.BottomCenter),
+            CelebrationBanner(
+                celebration = celebration,
+                onDismiss = onCelebrationDone,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp),
             )
         }
     }
@@ -199,44 +237,18 @@ fun AddCardContent(state: AddCardUiState, actions: AddCardActions, onBack: () ->
     }
 }
 
-/** Slides the confirmation panel in from the bottom while a card is selected. */
-@Composable
-private fun ConfirmOverlay(
-    selected: TcgCard?,
-    ownedIds: Set<String>,
-    onPreview: (TcgCard) -> Unit,
-    onCancel: () -> Unit,
-    onConfirm: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // Keep showing the last card while the panel animates out.
-    var lastSelected by remember { mutableStateOf(selected) }
-    if (selected != null) lastSelected = selected
-    AnimatedVisibility(
-        visible = selected != null,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it },
-        modifier = modifier,
-    ) {
-        lastSelected?.let { card ->
-            ConfirmPanel(
-                card = card,
-                alreadyOwned = card.id in ownedIds,
-                onPreview = { onPreview(card) },
-                onCancel = onCancel,
-                onConfirm = onConfirm,
-            )
-        }
-    }
-}
-
 private fun TcgCard.subtitle() =
     listOfNotNull(setName, "#$number", releaseYear, rarity).joinToString(" · ")
 
 @Composable
 private fun Controls(state: AddCardUiState, actions: AddCardActions) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SearchField(query = state.query, onQueryChange = actions.onQueryChange)
+        DexSearchField(
+            query = state.query,
+            onQueryChange = actions.onQueryChange,
+            placeholder = "Search set, number, rarity…",
+            contentDescription = "Search cards",
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SetDropdown(
                 sets = state.sets,
@@ -260,11 +272,12 @@ private fun Controls(state: AddCardUiState, actions: AddCardActions) {
             }
         }
         if (!state.loading && !state.failed && state.totalValid > 0) {
+            val ownedHere = state.cards.count { it.id in state.ownedIds }
             Text(
-                text = if (state.cards.size == state.totalValid) {
-                    "${state.totalValid} CARDS · ${state.sets.size} SETS · TAP TO ADD, HOLD TO ZOOM"
-                } else {
-                    "${state.cards.size} OF ${state.totalValid} CARDS · TAP TO ADD, HOLD TO ZOOM"
+                text = buildString {
+                    if (state.cards.size == state.totalValid) append("${state.totalValid} CARDS")
+                    else append("${state.cards.size} OF ${state.totalValid}")
+                    append(" · $ownedHere OWNED · TAP TO ADD, HOLD TO ZOOM")
                 },
                 style = DexText.ScreenSmall.copy(fontSize = 10.sp),
                 color = Color.White.copy(alpha = 0.85f),
@@ -272,54 +285,6 @@ private fun Controls(state: AddCardUiState, actions: AddCardActions) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
-        }
-    }
-}
-
-@Composable
-private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
-    val focus = LocalFocusManager.current
-    DexScreen(Modifier.fillMaxWidth(), contentPadding = 0.dp, showGrid = false, shape = RoundedCornerShape(12.dp)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Search, contentDescription = null, tint = ScreenTextDim)
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.weight(1f)) {
-                if (query.isEmpty()) {
-                    Text("Search set, number, rarity…", style = DexText.Screen, color = ScreenTextDim)
-                }
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    textStyle = DexText.Screen,
-                    cursorBrush = SolidColor(ScreenGlow),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { focus.clearFocus() },
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentDescription = "Search cards" },
-                )
-            }
-            if (query.isNotEmpty()) {
-                Icon(
-                    Icons.Rounded.Close,
-                    contentDescription = "Clear search",
-                    tint = ScreenTextDim,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onQueryChange("") }
-                        .padding(6.dp),
-                )
-            }
         }
     }
 }
@@ -393,31 +358,6 @@ private fun SetMenuItem(label: String, count: String, selected: Boolean, onClick
     )
 }
 
-/** Small dark-screen button used for the filter controls. */
-@Composable
-private fun ScreenButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    content: @Composable RowScope.() -> Unit,
-) {
-    val shape = RoundedCornerShape(12.dp)
-    Row(
-        modifier = modifier
-            .heightIn(min = 44.dp)
-            .clip(shape)
-            .background(Bezel)
-            .padding(3.dp)
-            .clip(shape)
-            .background(Brush.verticalGradient(listOf(Screen, ScreenDeep)))
-            .border(1.dp, ScreenLine, shape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content,
-    )
-}
-
 @Composable
 private fun ResultsGrid(
     state: AddCardUiState,
@@ -433,8 +373,8 @@ private fun ResultsGrid(
             start = 12.dp,
             end = 12.dp,
             top = 4.dp,
-            // Space for the confirmation panel so the last row stays reachable.
-            bottom = if (state.selected != null) 200.dp else 12.dp,
+            // Space for the Undo snackbar so the last row stays reachable.
+            bottom = 80.dp,
         ),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -443,7 +383,6 @@ private fun ResultsGrid(
         items(state.cards, key = { it.id }) { card ->
             ResultCard(
                 card = card,
-                selected = card.id == state.selected?.id,
                 owned = card.id in state.ownedIds,
                 onClick = { onCardClick(card) },
                 onLongClick = { onCardLongClick(card) },
@@ -456,7 +395,6 @@ private fun ResultsGrid(
 @Composable
 private fun ResultCard(
     card: TcgCard,
-    selected: Boolean,
     owned: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -467,13 +405,13 @@ private fun ResultCard(
             .clip(shape)
             .combinedClickable(
                 role = Role.Button,
-                onClickLabel = "Select",
+                onClickLabel = if (owned) "Remove from collection" else "Add to collection",
                 onLongClickLabel = "Zoom",
                 onClick = onClick,
                 onLongClick = onLongClick,
             )
             .semantics(mergeDescendants = true) {
-                this.selected = selected
+                this.selected = owned
                 contentDescription = buildString {
                     append("${card.name}, ${card.subtitle()}")
                     if (owned) append(", already in collection")
@@ -486,20 +424,25 @@ private fun ResultCard(
                 .aspectRatio(CARD_ASPECT)
                 .clip(shape)
                 .border(
-                    width = if (selected) 3.dp else 1.dp,
-                    color = if (selected) DexYellow else ScreenLine,
+                    width = if (owned) 3.dp else 1.dp,
+                    color = if (owned) DexYellow else ScreenLine,
                     shape = shape,
                 )
-                .padding(if (selected) 3.dp else 1.dp),
+                .padding(if (owned) 3.dp else 1.dp),
         ) {
             TcgCardImage(url = card.imageSmall, modifier = Modifier.fillMaxSize())
-            if (owned) OwnedTag(Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
+            AnimatedOwnedTag(
+                visible = owned,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 4.dp),
+            )
         }
         Spacer(Modifier.height(4.dp))
         Text(
             card.setName,
             style = DexText.ScreenSmall,
-            color = if (selected) DexYellow else ScreenText,
+            color = if (owned) DexYellow else ScreenText,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 2.dp),
@@ -511,6 +454,19 @@ private fun ResultCard(
             maxLines = 1,
             modifier = Modifier.padding(horizontal = 2.dp),
         )
+    }
+}
+
+/** Pops the OWNED tag in when a card is added, so the tap visibly lands. */
+@Composable
+private fun AnimatedOwnedTag(visible: Boolean, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = scaleIn(initialScale = 0.4f) + fadeIn(),
+        exit = scaleOut() + fadeOut(),
+        modifier = modifier,
+    ) {
+        OwnedTag()
     }
 }
 
@@ -531,62 +487,3 @@ private fun OwnedTag(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun ConfirmPanel(
-    card: TcgCard,
-    alreadyOwned: Boolean,
-    onPreview: () -> Unit,
-    onCancel: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val shape = RoundedCornerShape(20.dp)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 4.dp)
-            .clip(shape)
-            .background(Brush.verticalGradient(listOf(BezelSilver, BezelSilverDark)))
-            .border(3.dp, Bezel, shape)
-            .padding(10.dp),
-    ) {
-        DexScreen(Modifier.fillMaxWidth(), showGrid = false, contentPadding = 12.dp) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TcgCardImage(
-                        url = card.imageSmall,
-                        contentDescription = "Zoom ${card.name}",
-                        modifier = Modifier
-                            .width(64.dp)
-                            .aspectRatio(CARD_ASPECT)
-                            .clickable(onClickLabel = "Zoom", onClick = onPreview),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (alreadyOwned) "ALREADY IN YOUR COLLECTION" else "ADD THIS CARD TO YOUR COLLECTION?",
-                            style = DexText.Screen.copy(fontSize = 14.sp),
-                            color = ScreenText,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(card.subtitle(), style = DexText.ScreenSmall, color = ScreenTextDim)
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DexButton(
-                        "Cancel",
-                        onClick = onCancel,
-                        style = DexButtonStyle.Secondary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    DexButton(
-                        if (alreadyOwned) "Owned" else "Add to collection",
-                        onClick = onConfirm,
-                        enabled = !alreadyOwned,
-                        modifier = Modifier.weight(1.4f),
-                    )
-                }
-            }
-        }
-    }
-}

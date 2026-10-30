@@ -3,6 +3,8 @@ package com.potentplum.dextracker
 import android.content.Context
 import com.potentplum.dextracker.data.CardRepository
 import com.potentplum.dextracker.data.PokedexRepository
+import com.potentplum.dextracker.data.SettingsRepository
+import com.potentplum.dextracker.data.backup.BackupRepository
 import com.potentplum.dextracker.data.local.AppDatabase
 import com.potentplum.dextracker.data.remote.Network
 import okhttp3.OkHttpClient
@@ -14,4 +16,6 @@ class AppContainer(context: Context) {
 
     val pokedexRepository = PokedexRepository(Network.pokeApi(okHttpClient), database.pokemonDao())
     val cardRepository = CardRepository(Network.tcgApi(okHttpClient), database.ownedCardDao())
+    val settingsRepository = SettingsRepository(context)
+    val backupRepository = BackupRepository(context, database.ownedCardDao(), settingsRepository)
 }

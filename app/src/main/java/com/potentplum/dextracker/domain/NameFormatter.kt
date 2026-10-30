@@ -11,6 +11,19 @@ object NameFormatter {
         "mr-mime" to "Mr. Mime",
         "farfetchd" to "Farfetch'd",
         "ho-oh" to "Ho-Oh",
+        "mime-jr" to "Mime Jr.",
+        "porygon-z" to "Porygon-Z",
+        "flabebe" to "Flabébé",
+        "type-null" to "Type: Null",
+        "jangmo-o" to "Jangmo-o",
+        "hakamo-o" to "Hakamo-o",
+        "kommo-o" to "Kommo-o",
+        "sirfetchd" to "Sirfetch'd",
+        "mr-rime" to "Mr. Rime",
+        "wo-chien" to "Wo-Chien",
+        "chien-pao" to "Chien-Pao",
+        "ting-lu" to "Ting-Lu",
+        "chi-yu" to "Chi-Yu",
     )
 
     fun fromSlug(slug: String): String =

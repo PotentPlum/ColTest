@@ -1,5 +1,10 @@
 package com.potentplum.dextracker.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -35,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -62,11 +69,18 @@ import com.potentplum.dextracker.ui.theme.ScreenLine
 /**
  * The red Pokédex body every screen sits in: hardware strip with the lens and LEDs,
  * a title plate, then the screen content. [floatingAction] is drawn bottom-end.
+ *
+ * When [compact] is true (e.g. while a list is scrolled) the hardware strip folds away and
+ * a small lens moves into the title plate, giving the content more room. [actions] sit at
+ * the end of the title plate.
  */
 @Composable
 fun DexScaffold(
     title: String,
     onBack: (() -> Unit)? = null,
+    compact: Boolean = false,
+    actions: (@Composable () -> Unit)? = null,
+    snackbarHostState: SnackbarHostState? = null,
     floatingAction: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -77,8 +91,14 @@ fun DexScaffold(
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         Column(Modifier.fillMaxSize()) {
-            HardwareStrip()
-            TitlePlate(title = title, onBack = onBack)
+            AnimatedVisibility(
+                visible = !compact,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                HardwareStrip()
+            }
+            TitlePlate(title = title, onBack = onBack, showLens = compact && onBack == null, actions = actions)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -88,6 +108,14 @@ fun DexScaffold(
             )
         }
         floatingAction?.invoke(this)
+        if (snackbarHostState != null) {
+            DexSnackbarHost(
+                snackbarHostState,
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 20.dp),
+            )
+        }
     }
 }
 
@@ -163,7 +191,12 @@ private fun Led(color: Color, size: Dp) {
 }
 
 @Composable
-private fun TitlePlate(title: String, onBack: (() -> Unit)?) {
+private fun TitlePlate(
+    title: String,
+    onBack: (() -> Unit)?,
+    showLens: Boolean,
+    actions: (@Composable () -> Unit)?,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,17 +205,9 @@ private fun TitlePlate(title: String, onBack: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(DexRedDark)
-                    .border(2.dp, DexRedDeep, CircleShape)
-                    .clickable(onClickLabel = "Back", role = Role.Button, onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
+            ShellIconButton(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", onClick = onBack)
+        } else if (showLens) {
+            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Lens(30.dp) }
         } else {
             Spacer(Modifier.width(40.dp))
         }
@@ -197,7 +222,31 @@ private fun TitlePlate(title: String, onBack: (() -> Unit)?) {
                 .padding(horizontal = 8.dp)
                 .semantics { heading() },
         )
-        Spacer(Modifier.width(40.dp))
+        if (actions != null) {
+            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { actions() }
+        } else {
+            Spacer(Modifier.width(40.dp))
+        }
+    }
+}
+
+/** Round button in the red shell, matching the back button; used for title plate actions. */
+@Composable
+fun ShellIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(DexRedDark)
+            .border(2.dp, DexRedDeep, CircleShape)
+            .clickable(onClickLabel = contentDescription, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = Color.White)
     }
 }
 

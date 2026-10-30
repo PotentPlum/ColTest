@@ -152,15 +152,24 @@ fun DexButton(
     }
 }
 
-/** Generation tab: yellow when selected with a small pointer, gray otherwise. */
+/**
+ * Generation tab: yellow when selected with a small pointer, gray otherwise. [subtitle]
+ * is a second, smaller line such as the generation's progress.
+ */
 @Composable
-fun DexTab(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun DexTab(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+) {
     val shape = RoundedCornerShape(10.dp)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
+                .height(if (subtitle != null) 50.dp else 44.dp)
                 .clip(shape)
                 .background(
                     Brush.verticalGradient(
@@ -173,7 +182,16 @@ fun DexTab(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modif
                 .clickable(role = Role.Tab, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text.uppercase(), style = DexText.Label, color = Ink)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text.uppercase(), style = DexText.Label, color = Ink)
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = DexText.Label.copy(fontSize = 11.sp, letterSpacing = 0.sp),
+                        color = Ink.copy(alpha = 0.7f),
+                    )
+                }
+            }
         }
         // Pointer under the active tab
         Canvas(Modifier.size(width = 14.dp, height = 7.dp)) {

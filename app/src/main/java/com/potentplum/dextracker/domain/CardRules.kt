@@ -10,25 +10,27 @@ data class CardTraits(
 )
 
 /**
- * Strict rules engine for TCG search results. Anything matched here is dropped before the
- * user ever sees it, regardless of what the API returned.
+ * Strict rules engine for TCG search results. Anything [isAllowed] rejects is dropped before
+ * the user ever sees it, regardless of what the API returned. Regional forms are a user
+ * setting, so they're flagged by [isRegionalForm] and filtered separately.
  */
 object CardRules {
-    /** Regional variants are tracked as separate forms, not as the base Pokémon. */
-    private val excludedNameTerms = listOf("alolan", "galarian")
+    /** Every regional variant prefix printed on cards, so the rule treats them all alike. */
+    private val regionalTerms = listOf("alolan", "galarian", "hisuian", "paldean")
 
     /** Multi-Pokémon cards don't belong to a single Dex entry. */
-    private val excludedSubtypes = listOf("tag team", "alolan", "galarian")
+    private val excludedSubtypes = listOf("tag team")
 
     fun isAllowed(card: CardTraits): Boolean {
         // Only Pokémon cards are collectible against a Dex entry; Trainer and Energy are dropped.
         if (card.supertype.normalized() != "pokemon") return false
+        return card.subtypes.none { it.normalized() in excludedSubtypes }
+    }
 
-        val subtypes = card.subtypes.map { it.normalized() }
-        if (subtypes.any { it in excludedSubtypes }) return false
-
-        val name = card.name.normalized()
-        return excludedNameTerms.none { term -> name.split(' ').any { it == term } }
+    fun isRegionalForm(card: CardTraits): Boolean {
+        val words = card.name.normalized().split(' ')
+        return card.subtypes.any { it.normalized() in regionalTerms } ||
+            regionalTerms.any { it in words }
     }
 
     /** Lower-cases and strips accents so "Pokémon" == "pokemon" and "TAG TEAM" == "tag team". */
