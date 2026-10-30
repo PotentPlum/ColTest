@@ -79,6 +79,7 @@ import com.potentplum.dextracker.ui.components.ScreenButton
 import com.potentplum.dextracker.ui.components.ScreenMessage
 import com.potentplum.dextracker.ui.components.SheetCard
 import com.potentplum.dextracker.ui.components.TcgCardImage
+import com.potentplum.dextracker.ui.components.WantedStar
 import com.potentplum.dextracker.ui.theme.DexText
 import com.potentplum.dextracker.ui.theme.DexYellow
 import com.potentplum.dextracker.ui.theme.Ink
@@ -129,6 +130,7 @@ fun AddCardScreen(
             onAddCopy = viewModel::addCopy,
             onChangeQuantity = viewModel::changeQuantity,
             onEditCopy = viewModel::editCopy,
+            onToggleWanted = viewModel::toggleWanted,
             onCloseSheet = viewModel::closeSheet,
             onConditionChange = viewModel::setDefaultCondition,
             onLanguageChange = viewModel::setDefaultLanguage,
@@ -151,7 +153,8 @@ private fun CardAdded.message(): String {
         key.condition.label,
         key.language.label,
     ).joinToString(" · ")
-    return "Added ${card.setName} #${card.number} · $details"
+    val wantedNote = if (unwanted != null) " · off your wanted list" else ""
+    return "Added ${card.setName} #${card.number} · $details$wantedNote"
 }
 
 private fun CardAdded.toCelebration(): Celebration {
@@ -171,6 +174,7 @@ class AddCardActions(
     val onAddCopy: (TcgCard, CardVariant) -> Unit,
     val onChangeQuantity: (copyId: Long, delta: Int) -> Unit,
     val onEditCopy: (copyId: Long, CardVariant, CardCondition, CardLanguage) -> Unit,
+    val onToggleWanted: (TcgCard) -> Unit,
     val onCloseSheet: () -> Unit,
     val onConditionChange: (CardCondition) -> Unit,
     val onLanguageChange: (CardLanguage) -> Unit,
@@ -278,6 +282,8 @@ fun AddCardContent(
             onEditCopy = actions.onEditCopy,
             onZoom = { preview = card },
             onDismiss = actions.onCloseSheet,
+            wanted = card.id in state.wantedIds,
+            onToggleWanted = { actions.onToggleWanted(card) },
         )
     }
 
@@ -449,6 +455,7 @@ private fun ResultsGrid(
             ResultCard(
                 card = card,
                 ownedCopies = state.owned[card.id]?.copies?.sumOf { it.quantity } ?: 0,
+                wanted = card.id in state.wantedIds,
                 onClick = { onCardClick(card) },
                 onLongClick = { onCardLongClick(card) },
             )
@@ -461,6 +468,7 @@ private fun ResultsGrid(
 private fun ResultCard(
     card: TcgCard,
     ownedCopies: Int,
+    wanted: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -481,6 +489,7 @@ private fun ResultCard(
                 contentDescription = buildString {
                     append("${card.name}, ${card.subtitle()}")
                     if (owned) append(", $ownedCopies in collection")
+                    if (wanted) append(", on your wanted list")
                     if (card.variants.size > 1) append(", ${card.variants.size} variants")
                 }
             },
@@ -504,6 +513,13 @@ private fun ResultCard(
                     .align(Alignment.TopCenter)
                     .padding(top = 4.dp),
             )
+            if (wanted) {
+                WantedStar(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp),
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
         Text(

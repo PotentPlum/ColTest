@@ -144,4 +144,51 @@ interface CollectionDao {
 
     @Query("SELECT cardId FROM card WHERE cardId IN (SELECT cardId FROM owned_copy)")
     suspend fun ownedCardIds(): List<String>
+
+    @Transaction
+    @Query("SELECT * FROM card WHERE setId = :setId AND cardId IN (SELECT cardId FROM owned_copy)")
+    fun observeOwnedInSet(setId: String): Flow<List<CardWithCopies>>
+
+    @Query(
+        """
+        SELECT setId, COUNT(*) AS owned FROM card
+        WHERE cardId IN (SELECT cardId FROM owned_copy)
+        GROUP BY setId
+        """
+    )
+    fun observeOwnedCountsBySet(): Flow<List<SetOwnedCount>>
+
+    /** Pokédex entries with at least one card. */
+    @Query("SELECT DISTINCT c.dex FROM owned_copy o JOIN card c ON c.cardId = o.cardId WHERE c.dex > 0")
+    fun observeCaughtDexes(): Flow<List<Int>>
+}
+
+@Dao
+interface WantedDao {
+    @Query("SELECT * FROM wanted_card ORDER BY added_at DESC")
+    fun observeAll(): Flow<List<WantedCardEntity>>
+
+    @Query("SELECT * FROM wanted_card ORDER BY added_at")
+    suspend fun getAll(): List<WantedCardEntity>
+
+    @Query("SELECT * FROM wanted_card WHERE cardId = :cardId")
+    suspend fun get(cardId: String): WantedCardEntity?
+
+    @Upsert
+    suspend fun upsert(card: WantedCardEntity)
+
+    /** Returns the row id per card, or -1 for cards already on the list. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIfAbsent(cards: List<WantedCardEntity>): List<Long>
+
+    @Query("DELETE FROM wanted_card WHERE cardId = :cardId")
+    suspend fun delete(cardId: String): Int
+
+    @Query(
+        """
+        UPDATE wanted_card SET priceTrend = :trend, priceReverseTrend = :reverseTrend, pricesUpdatedAt = :updatedAt
+        WHERE cardId = :cardId
+        """
+    )
+    suspend fun updatePrices(cardId: String, trend: Double?, reverseTrend: Double?, updatedAt: Long)
 }

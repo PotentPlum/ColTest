@@ -29,6 +29,8 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +61,7 @@ import com.potentplum.dextracker.domain.CardCondition
 import com.potentplum.dextracker.domain.CardLanguage
 import com.potentplum.dextracker.domain.CardVariant
 import com.potentplum.dextracker.ui.theme.DexText
+import com.potentplum.dextracker.ui.theme.DexYellow
 import com.potentplum.dextracker.ui.theme.Screen
 import com.potentplum.dextracker.ui.theme.ScreenDeep
 import com.potentplum.dextracker.ui.theme.ScreenGlow
@@ -96,6 +100,8 @@ fun CopiesSheet(
     onEditCopy: (copyId: Long, CardVariant, CardCondition, CardLanguage) -> Unit,
     onZoom: () -> Unit,
     onDismiss: () -> Unit,
+    wanted: Boolean? = null,
+    onToggleWanted: () -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -106,7 +112,7 @@ fun CopiesSheet(
     ) {
         CopiesSheetContent(
             card, copies, condition, language, onConditionChange, onLanguageChange, onAdd, onChangeQuantity,
-            onEditCopy, onZoom,
+            onEditCopy, onZoom, wanted = wanted, onToggleWanted = onToggleWanted,
         )
     }
 }
@@ -125,6 +131,9 @@ internal fun CopiesSheetContent(
     onEditCopy: (copyId: Long, CardVariant, CardCondition, CardLanguage) -> Unit,
     onZoom: () -> Unit,
     initiallyEditing: Long? = null,
+    /** Whether the card is on the wanted list; null hides the Want button. */
+    wanted: Boolean? = null,
+    onToggleWanted: () -> Unit = {},
 ) {
     // The line being edited. If an edit merges it into another line, it's gone and the
     // editor simply closes.
@@ -135,6 +144,10 @@ internal fun CopiesSheetContent(
             .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
     ) {
         Header(card, onZoom)
+        if (wanted != null) {
+            Spacer(Modifier.height(12.dp))
+            WantButton(wanted, onToggleWanted)
+        }
         if (copies.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             SectionLabel("Your copies")
@@ -293,9 +306,44 @@ private fun CopyEditor(
     }
 }
 
+/** Puts the card on the wanted list or takes it off; lit up while it's on the list. */
+@Composable
+private fun WantButton(wanted: Boolean, onToggle: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(shape)
+            .background(if (wanted) DexYellow.copy(alpha = 0.14f) else ScreenDeep)
+            .border(1.5.dp, if (wanted) DexYellow else ScreenLine, shape)
+            .semantics { stateDescription = if (wanted) "On your wanted list" else "Not on your wanted list" }
+            .clickable(
+                onClickLabel = if (wanted) "Remove from wanted list" else "Add to wanted list",
+                role = Role.Switch,
+                onClick = onToggle,
+            ),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (wanted) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+            contentDescription = null,
+            tint = if (wanted) DexYellow else ScreenGlow,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (wanted) "ON YOUR WANTED LIST" else "WANT THIS CARD",
+            style = DexText.Label.copy(fontSize = 13.sp),
+            color = if (wanted) DexYellow else ScreenText,
+        )
+    }
+}
+
 /** A label over a sideways-scrolling row of chips, one of which is selected. */
 @Composable
-private fun <T> ChoiceRow(
+internal fun <T> ChoiceRow(
     label: String,
     options: List<T>,
     selected: T,

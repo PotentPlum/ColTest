@@ -12,6 +12,7 @@ import com.potentplum.dextracker.data.DownloadProgress
 import com.potentplum.dextracker.data.OfflineDownloader
 import com.potentplum.dextracker.data.PokedexRepository
 import com.potentplum.dextracker.data.SettingsRepository
+import com.potentplum.dextracker.data.WantedRepository
 import com.potentplum.dextracker.data.backup.BackupRepository
 import com.potentplum.dextracker.data.backup.InvalidBackupException
 import com.potentplum.dextracker.data.local.PokemonWithCount
@@ -63,6 +64,8 @@ data class GridUiState(
     /** Pokédex pages saved for offline use. */
     val savedPages: Int = 0,
     val download: DownloadProgress = DownloadProgress(),
+    /** Pokémon with a card on the wanted list. */
+    val wantedDexes: Set<Int> = emptySet(),
 ) {
     val allSaved: Boolean get() = savedPages >= Generation.MAX_DEX
 
@@ -78,6 +81,7 @@ class GridViewModel(
     private val settings: SettingsRepository,
     connectivity: ConnectivityMonitor,
     private val downloader: OfflineDownloader,
+    wanted: WantedRepository,
 ) : ViewModel() {
     private data class Offline(val online: Boolean, val savedPages: Int, val download: DownloadProgress)
 
@@ -115,13 +119,14 @@ class GridViewModel(
         repository.observeAll(),
         search,
         sync,
-        settings.includeRegionalForms,
+        combine(settings.includeRegionalForms, wanted.observeDexes()) { regional, wanted -> regional to wanted },
         offline,
-    ) { all, (controls, query), sync, regional, offline ->
+    ) { all, (controls, query), sync, (regional, wantedDexes), offline ->
         buildState(all, controls, query, sync, regional).copy(
             online = offline.online,
             savedPages = offline.savedPages,
             download = offline.download,
+            wantedDexes = wantedDexes,
         )
     }
         .flowOn(Dispatchers.Default)

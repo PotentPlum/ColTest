@@ -19,11 +19,21 @@ interface TcgApiService {
         @Query("select") select: String = SELECT_FIELDS,
     ): CardPage
 
+    /** Every set, newest first; there are fewer than one page of them. */
+    @GET("sets")
+    suspend fun sets(
+        @Query("orderBy") orderBy: String = "-releaseDate",
+        @Query("pageSize") pageSize: Int = MAX_PAGE_SIZE,
+        @Query("select") select: String = SET_FIELDS,
+    ): SetPage
+
     companion object {
         const val BASE_URL = "https://api.pokemontcg.io/v2/"
         const val MAX_PAGE_SIZE = 250
         private const val SELECT_FIELDS =
             "id,name,supertype,subtypes,number,rarity,set,images,nationalPokedexNumbers,tcgplayer,cardmarket"
+
+        private const val SET_FIELDS = "id,name,series,printedTotal,total,ptcgoCode,releaseDate,images"
 
         /** Just what's needed to refresh prices of cards already in the collection. */
         const val PRICE_FIELDS = "id,cardmarket"
@@ -69,13 +79,26 @@ data class CardmarketPricesDto(
 )
 
 @Serializable
+data class SetPage(val data: List<CardSetDto>)
+
+@Serializable
 data class CardSetDto(
     val id: String,
     val name: String,
     val series: String = "",
     /** Formatted "yyyy/MM/dd". */
     val releaseDate: String = "",
+    /** The number printed on the cards, e.g. the 128 in "132/128". */
+    val printedTotal: Int = 0,
+    /** Every card in the set, secret rares included. */
+    val total: Int = 0,
+    /** Short code printed on the cards, e.g. "30C"; missing for older sets. */
+    val ptcgoCode: String? = null,
+    val images: SetImagesDto? = null,
 )
+
+@Serializable
+data class SetImagesDto(val symbol: String = "", val logo: String = "")
 
 @Serializable
 data class CardImagesDto(val small: String, val large: String)

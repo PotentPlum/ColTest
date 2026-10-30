@@ -38,6 +38,20 @@ enum class CardVariant(val key: String, val label: String) {
             val preference = listOf(UNLIMITED_HOLO, UNLIMITED, HOLO, NORMAL, REVERSE_HOLO, FIRST_EDITION_HOLO, FIRST_EDITION)
             return preference.firstOrNull { it in available } ?: NORMAL
         }
+
+        /** The regular print and its holo versions, between which a quick add needn't ask. */
+        private val plainPrints = setOf(NORMAL, HOLO, REVERSE_HOLO)
+
+        /**
+         * The variant one tap adds in Quick add, or null when the user has to choose. A card
+         * printed as just a normal and a holo version gets the normal one (the holo, for a holo
+         * and reverse holo card); anything more (1st Edition, three versions…) needs a choice.
+         */
+        fun quickAddFor(available: List<CardVariant>): CardVariant? {
+            val options = optionsFor(available)
+            if (options.size > 2 || !options.all { it in plainPrints }) return null
+            return if (NORMAL in options) NORMAL else defaultFor(options)
+        }
     }
 }
 

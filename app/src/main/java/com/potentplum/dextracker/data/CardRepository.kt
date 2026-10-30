@@ -5,17 +5,23 @@ import com.potentplum.dextracker.data.local.AppDatabase
 import com.potentplum.dextracker.data.local.CardEntity
 import com.potentplum.dextracker.data.local.CardWithCopies
 import com.potentplum.dextracker.data.local.OwnedCopyEntity
+import com.potentplum.dextracker.data.local.WantedCardEntity
 import com.potentplum.dextracker.data.remote.CardDto
+import com.potentplum.dextracker.data.remote.CardSetDto
 import com.potentplum.dextracker.data.remote.TcgApiService
 import com.potentplum.dextracker.domain.CardCondition
 import com.potentplum.dextracker.domain.CardLanguage
+import com.potentplum.dextracker.domain.CardNumberOrder
 import com.potentplum.dextracker.domain.CardPrices
 import com.potentplum.dextracker.domain.CardRules
+import com.potentplum.dextracker.domain.CardSet
 import com.potentplum.dextracker.domain.CardTraits
 import com.potentplum.dextracker.domain.CardVariant
 import com.potentplum.dextracker.domain.Generation
+import com.potentplum.dextracker.domain.SetCard
 import com.potentplum.dextracker.domain.TcgCard
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -25,6 +31,8 @@ data class AddResult(
     val newCatch: Boolean,
     /** Set when this catch completed the Pokémon's generation. */
     val completedGeneration: Generation?,
+    /** The card was on the wanted list and has been taken off it; kept so Undo can put it back. */
+    val unwanted: WantedCardEntity? = null,
 )
 
 /** Identifies one line of owned copies: a card in a given variant, condition and language. */
@@ -40,9 +48,12 @@ class CardRepository(
     private val database: AppDatabase,
 ) {
     private val dao = database.collectionDao()
+    private val wantedDao = database.wantedDao()
 
     /** Search results are live queries, but kept for the session so going back is instant. */
     private val sessionCache = mutableMapOf<Int, List<TcgCard>>()
+    private val setCardsCache = mutableMapOf<String, List<SetCard>>()
+    private var setsCache: List<CardSet>? = null
     private val cacheLock = Mutex()
 
     fun observeOwned(dex: Int): Flow<List<CardWithCopies>> = dao.observeForDex(dex)
@@ -77,13 +88,71 @@ class CardRepository(
         return cards
     }
 
+    /** Every set, newest first. */
+    suspend fun sets(forceRefresh: Boolean = false): List<CardSet> {
+        if (!forceRefresh) cacheLock.withLock { setsCache }?.let { return it }
+        val sets = api.sets().data.map { it.toDomain() }
+        cacheLock.withLock { setsCache = sets }
+        return sets
+    }
+
+    /**
+     * Every card in a set, Trainers and Energy included, in number order. Only cards the rules
+     * engine allows count toward the Pokédex; the rest get dex 0.
+     */
+    suspend fun cardsInSet(setId: String, forceRefresh: Boolean = false): List<SetCard> {
+        if (!forceRefresh) cacheLock.withLock { setCardsCache[setId] }?.let { return it }
+
+        val query = "set.id:\"$setId\""
+        val all = mutableListOf<CardDto>()
+        var page = 1
+        while (page <= MAX_PAGES) {
+            val result = api.searchCards(query = query, page = page, orderBy = "number")
+            all += result.data
+            if (result.data.isEmpty() || all.size >= result.totalCount) break
+            page++
+        }
+
+        val cards = all
+            .distinctBy { it.id }
+            .mapNotNull { dto ->
+                val counts = CardRules.isAllowed(dto.traits())
+                val dex = dto.nationalPokedexNumbers.firstOrNull()?.takeIf { counts && it in 1..Generation.MAX_DEX } ?: 0
+                dto.toDomain(regionalForm = CardRules.isRegionalForm(dto.traits()))?.let { SetCard(it, dex) }
+            }
+            .sortedWith(compareBy(CardNumberOrder) { it.card.number })
+        cacheLock.withLock { setCardsCache[setId] = cards }
+        return cards
+    }
+
+    fun observeOwnedInSet(setId: String): Flow<List<CardWithCopies>> = dao.observeOwnedInSet(setId)
+
+    /** Owned cards per set id. */
+    fun observeOwnedCountsBySet(): Flow<Map<String, Int>> =
+        dao.observeOwnedCountsBySet().map { counts -> counts.associate { it.setId to it.owned } }
+
+    /** Pokédex entries with at least one card. */
+    fun observeCaughtDexes(): Flow<Set<Int>> = dao.observeCaughtDexes().map { it.toSet() }
+
     /** Art of every owned card, to keep it available offline. */
     suspend fun ownedImageUrls(): List<String> = dao.getAll().flatMap { listOf(it.card.imageSmall, it.card.imageLarge) }
 
-    /** Adds one copy, raising the quantity if an identical copy is already owned. */
+    /**
+     * Adds one copy, raising the quantity if an identical copy is already owned. A card on the
+     * wanted list comes off it. Cards with dex 0 (Trainers, Energy) never catch anything.
+     */
     suspend fun addCopy(card: CardEntity, key: CopyKey): AddResult = database.withTransaction {
-        val newCatch = dao.countCopyRowsForDex(card.dex) == 0
+        val unwanted = wantedDao.get(card.cardId)?.also { wantedDao.delete(it.cardId) }
+        val newCatch = card.dex in 1..Generation.MAX_DEX && dao.countCopyRowsForDex(card.dex) == 0
         saveCard(card)
+        insertOrRaise(card, key)
+        val generation = Generation.forDex(card.dex)
+        val completed = newCatch &&
+            dao.countCaughtBetween(generation.dexRange.first, generation.dexRange.last) >= generation.size
+        AddResult(newCatch, if (completed) generation else null, unwanted)
+    }
+
+    private suspend fun insertOrRaise(card: CardEntity, key: CopyKey) {
         val existing = dao.findCopy(card.cardId, key.variant.key, key.condition.code, key.language.code)
         if (existing != null) {
             dao.setQuantity(existing.id, existing.quantity + 1)
@@ -99,10 +168,6 @@ class CardRepository(
                 )
             )
         }
-        val generation = Generation.forDex(card.dex)
-        val completed = newCatch &&
-            dao.countCaughtBetween(generation.dexRange.first, generation.dexRange.last) >= generation.size
-        AddResult(newCatch, if (completed) generation else null)
     }
 
     /** Removes one copy matching [key], e.g. to undo an add. */
@@ -177,6 +242,18 @@ class CardRepository(
     }
 
     private fun CardDto.traits() = CardTraits(name, supertype, subtypes)
+
+    private fun CardSetDto.toDomain() = CardSet(
+        id = id,
+        name = name,
+        series = series,
+        releaseDate = releaseDate,
+        printedTotal = printedTotal,
+        total = maxOf(total, printedTotal),
+        code = ptcgoCode?.takeIf { it.isNotBlank() },
+        logoUrl = images?.logo.orEmpty(),
+        symbolUrl = images?.symbol.orEmpty(),
+    )
 
     private fun CardDto.toDomain(regionalForm: Boolean): TcgCard? {
         val set = set ?: return null
