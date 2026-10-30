@@ -3,6 +3,7 @@ package com.potentplum.dextracker.data.backup
 import com.potentplum.dextracker.data.local.CardEntity
 import com.potentplum.dextracker.data.local.CardWithCopies
 import com.potentplum.dextracker.data.local.OwnedCopyEntity
+import com.potentplum.dextracker.data.local.WantedCardEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -69,6 +70,45 @@ class BackupCodecTest {
         val copy = BackupCodec.decode(text).cards.single().copies.single()
         assertEquals("normal", copy.variant)
         assertEquals(2, copy.quantity)
+    }
+
+    @Test
+    fun `round trips the wanted list and trainer cards`() {
+        val trainer = pikachu.copy(cardId = "me55-129", dex = 0, name = "Ultra Ball", variants = "")
+        val wanted = WantedCardEntity(
+            cardId = "me55-132",
+            dex = 144,
+            name = "Articuno",
+            setId = "me55",
+            setName = "30th Celebration",
+            setSeries = "Mega Evolution",
+            releaseDate = "2026/09/16",
+            number = "132",
+            rarity = "Illustration Rare",
+            imageSmall = "s",
+            imageLarge = "l",
+            variants = "holofoil",
+            priceTrend = 14.8,
+            priceReverseTrend = null,
+            pricesUpdatedAt = 9L,
+            addedAt = 42L,
+        )
+        val text = BackupCodec.encode(
+            listOf(CardWithCopies(trainer, copies.map { it.copy(cardId = trainer.cardId) })),
+            includeRegionalForms = false,
+            exportedAt = 1L,
+            wanted = listOf(wanted),
+        )
+        val decoded = BackupCodec.decode(text)
+        assertEquals(0, decoded.cards.single().card.dex)
+        // Like owned cards, prices aren't backed up.
+        assertEquals(listOf(wanted.copy(priceTrend = null, pricesUpdatedAt = null)), decoded.wanted)
+    }
+
+    @Test
+    fun `reads backups from before the wanted list as an empty list`() {
+        val text = """{"format":"pokedex-tracker-backup","version":2,"exportedAt":1,"cards":[]}"""
+        assertEquals(emptyList<WantedCardEntity>(), BackupCodec.decode(text).wanted)
     }
 
     @Test(expected = InvalidBackupException::class)

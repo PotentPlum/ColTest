@@ -1,6 +1,13 @@
 package com.potentplum.dextracker.ui.components
 
 import androidx.compose.foundation.background
+import com.potentplum.dextracker.ui.theme.Ink
+import com.potentplum.dextracker.ui.theme.DexYellow
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -43,6 +51,7 @@ fun TcgCardImage(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
     placeholderUrl: String? = null,
+    colorFilter: ColorFilter? = null,
 ) {
     var state by remember(url) { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
     Box(modifier.clip(RoundedCornerShape(6.dp))) {
@@ -58,6 +67,7 @@ fun TcgCardImage(
             model = url,
             contentDescription = contentDescription,
             contentScale = ContentScale.Fit,
+            colorFilter = colorFilter,
             onState = { state = it },
             modifier = Modifier.fillMaxSize(),
         )
@@ -126,5 +136,19 @@ fun CardDetailDialog(
                 }
             }
         }
+    }
+}
+
+/** Marks a card that's on the wanted list. */
+@Composable
+fun WantedStar(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(Ink.copy(alpha = 0.8f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Rounded.Star, contentDescription = null, tint = DexYellow, modifier = Modifier.size(15.dp))
     }
 }

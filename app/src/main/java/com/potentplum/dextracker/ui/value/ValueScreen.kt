@@ -45,14 +45,13 @@ import com.potentplum.dextracker.ui.components.DexTabBar
 import com.potentplum.dextracker.ui.components.ScreenMessage
 import com.potentplum.dextracker.ui.components.TcgCardImage
 import com.potentplum.dextracker.ui.components.TopTab
+import com.potentplum.dextracker.ui.components.euro
 import com.potentplum.dextracker.ui.theme.DexText
 import com.potentplum.dextracker.ui.theme.ScreenGlow
 import com.potentplum.dextracker.ui.theme.ScreenLine
 import com.potentplum.dextracker.ui.theme.ScreenText
 import com.potentplum.dextracker.ui.theme.ScreenTextDim
 import java.text.DateFormat
-import java.text.NumberFormat
-import java.util.Currency
 import java.util.Date
 
 @Composable
@@ -227,9 +226,3 @@ private fun NotableRow(entry: ValuedCopy, onClick: () -> Unit) {
 }
 
 private fun copies(count: Int) = if (count == 1) "1 card" else "$count cards"
-
-private val euroFormat: NumberFormat = NumberFormat.getCurrencyInstance().apply {
-    currency = Currency.getInstance("EUR")
-}
-
-private fun euro(amount: Double): String = euroFormat.format(amount)

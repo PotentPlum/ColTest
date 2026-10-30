@@ -85,6 +85,35 @@ data class OwnedCopyEntity(
     @ColumnInfo(name = "added_at") val addedAt: Long,
 )
 
+/**
+ * A card on the wanted list. Keeps its own copy of the card's details, since a wanted card
+ * usually isn't owned yet and so has no row in `card`.
+ */
+@Entity(tableName = "wanted_card")
+data class WantedCardEntity(
+    @PrimaryKey val cardId: String,
+    /** The Pokédex entry the card counts toward, or 0 for cards that don't count. */
+    val dex: Int,
+    val name: String,
+    val setId: String,
+    val setName: String,
+    val setSeries: String,
+    val releaseDate: String,
+    val number: String,
+    val rarity: String?,
+    val imageSmall: String,
+    val imageLarge: String,
+    /** Comma separated variant keys the card was printed in; empty when unknown. */
+    val variants: String,
+    val priceTrend: Double?,
+    val priceReverseTrend: Double?,
+    val pricesUpdatedAt: Long?,
+    @ColumnInfo(name = "added_at") val addedAt: Long,
+)
+
+/** How many cards of a set are owned, for the Sets tab. */
+data class SetOwnedCount(val setId: String, val owned: Int)
+
 /** A card with all the copies the user owns of it. */
 data class CardWithCopies(
     @Embedded val card: CardEntity,

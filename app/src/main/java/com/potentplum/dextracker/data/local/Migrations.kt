@@ -36,3 +36,16 @@ internal val MIGRATION_1_2_SQL = listOf(
         "SELECT cardId, 'unspecified', 'NM', 'EN', 1, added_at FROM `owned_card`",
     "DROP TABLE `owned_card`",
 )
+
+/** v3 adds the wanted list. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `wanted_card` (`cardId` TEXT NOT NULL, `dex` INTEGER NOT NULL, " +
+                "`name` TEXT NOT NULL, `setId` TEXT NOT NULL, `setName` TEXT NOT NULL, `setSeries` TEXT NOT NULL, " +
+                "`releaseDate` TEXT NOT NULL, `number` TEXT NOT NULL, `rarity` TEXT, `imageSmall` TEXT NOT NULL, " +
+                "`imageLarge` TEXT NOT NULL, `variants` TEXT NOT NULL, `priceTrend` REAL, `priceReverseTrend` REAL, " +
+                "`pricesUpdatedAt` INTEGER, `added_at` INTEGER NOT NULL, PRIMARY KEY(`cardId`))",
+        )
+    }
+}

@@ -35,6 +35,8 @@ automatically (`RetryInterceptor`).
 `domain/CardRules.kt` hard-filters every TCG result before it reaches the UI:
 
 * Only cards with the **Pokémon** supertype are kept. **Trainer** and Energy cards are dropped.
+  (Quick add lists a set's Trainers and Energy too, but they never count toward the Pokédex,
+  and regional forms only count when the setting is on.)
 * **TAG TEAM** cards are dropped.
 * **Regional forms** (Alolan, Galarian, Hisuian and Paldean) are all treated the same way. By
   default they're hidden, so an Alolan Vulpix card doesn't count as Vulpix. Turn on
@@ -89,7 +91,36 @@ The rules are covered by `CardRulesTest`.
    * Your first card of a Pokémon gets a **"Gotcha!"** banner with a wobbling Poké Ball and a
      haptic buzz. Catching the last missing Pokémon of a generation shows **"Gen N complete!"**.
 
-4. **Value** (the quiet tab at the bottom of the main screen): the **total worth** of your
+4. **Sets** (tab at the bottom): every set, newest first, grouped by series, with its logo,
+   release month, code (e.g. "30C") and how many of its cards you own. Search by name or code,
+   and filter to sets you've started or completed. Completed sets get a yellow frame.
+   **Tap a set to open Quick add:**
+   * Every card of the set, **ordered by number**, including Trainer and Energy cards. Those
+     can be collected like any other card but don't count toward the Pokédex.
+   * Missing cards are gray. Owned cards are in color with a count badge.
+   * **One tap adds one copy.** Owned cards get a **− n +** stepper underneath for more copies
+     or to remove one. Each tap pops a "+1", buzzes, and shows an **Undo** snackbar. The first
+     card of a new Pokémon still gets "Gotcha!".
+   * The **Adding as** bar shows the condition and language every tap uses. Tap **EDIT** to
+     change them.
+   * If a card only comes as a normal and a holo version, a tap adds the normal one (the holo,
+     for a holo and reverse holo card). If it has more versions, such as 1st Edition and
+     Unlimited, a **quick chooser** asks which one. If you own several lines of a card, − asks
+     which one loses a copy.
+   * **Hold a card** for the full copies sheet: zoom, every version, editing copies, and the
+     **☆ Want this card** button.
+   * An **All / Missing / Owned** filter turns a set into a checklist.
+5. **Wanted** (tab at the bottom): the cards you're looking for, with their Cardmarket trend
+   price and the total.
+   * Add a card from the copies sheet in Quick add or Add Card (**☆ Want this card**). Wanted
+     cards get a ★ on their card, and on their Pokémon in the National Dex grid.
+   * Cards that would **register a new Pokémon** are listed first and tagged **NEW CATCH**.
+     The **New catch** filter shows only those.
+   * Sort by price, Pokédex number, set or date added.
+   * **Got it** adds a copy using the "Adding as" condition and language and takes the card off
+     the list (with Undo). Adding a wanted card any other way takes it off the list too.
+   * Swipe a card away to remove it without adding it. Tap a card for its copies sheet.
+6. **Value** (the quiet tab at the bottom of the main screen): the **total worth** of your
    collection, plus a list of the cards worth **more than €3 each**, most valuable first. Tap
    one to open its Pokémon.
    * Values are Cardmarket **trend prices** for each copy. Reverse holos use Cardmarket's
@@ -114,7 +145,7 @@ The rules are covered by `CardRulesTest`.
 
 Your collection lives only on your phone, so back it up:
 
-* **⋮ → Back up collection** writes a JSON file to any location the system file picker
+* **⋮ → Back up collection** writes your collection and wanted list to a JSON file to any location the system file picker
   offers (Downloads, Google Drive, etc.).
 * **⋮ → Restore from backup** merges a backup into the current collection. Copies you
   already own are kept as they are, so a restore never deletes anything.
@@ -133,7 +164,8 @@ app/src/main/java/com/potentplum/dextracker/
 │   ├── remote/       Retrofit services + DTOs, OkHttp setup
 │   ├── backup/       JSON backup format and file import/export
 │   ├── PokedexRepository.kt
-│   ├── CardRepository.kt          Search, copies, prices
+│   ├── CardRepository.kt          Search, sets, copies, prices
+│   ├── WantedRepository.kt        The wanted list
 │   ├── SettingsRepository.kt
 │   ├── ConnectivityMonitor.kt
 │   └── OfflineDownloader.kt
@@ -144,6 +176,8 @@ app/src/main/java/com/potentplum/dextracker/
     ├── grid/         Screen 1
     ├── detail/       Screen 2
     ├── addcard/      Add Card flow
+    ├── sets/         Sets tab and Quick add
+    ├── wanted/       Wanted tab
     ├── value/        Collection value tab
     └── theme/
 ```

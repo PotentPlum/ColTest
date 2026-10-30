@@ -6,6 +6,7 @@ import com.potentplum.dextracker.data.ConnectivityMonitor
 import com.potentplum.dextracker.data.OfflineDownloader
 import com.potentplum.dextracker.data.PokedexRepository
 import com.potentplum.dextracker.data.SettingsRepository
+import com.potentplum.dextracker.data.WantedRepository
 import com.potentplum.dextracker.data.backup.BackupRepository
 import com.potentplum.dextracker.data.local.AppDatabase
 import com.potentplum.dextracker.data.remote.Network
@@ -17,7 +18,9 @@ class AppContainer(context: Context) {
     private val database = AppDatabase.build(context)
 
     val pokedexRepository = PokedexRepository(Network.pokeApi(okHttpClient), database.pokemonDao())
-    val cardRepository = CardRepository(Network.tcgApi(okHttpClient), database)
+    private val tcgApi = Network.tcgApi(okHttpClient)
+    val cardRepository = CardRepository(tcgApi, database)
+    val wantedRepository = WantedRepository(tcgApi, database)
     val settingsRepository = SettingsRepository(context)
     val backupRepository = BackupRepository(context, database, settingsRepository)
     val connectivity = ConnectivityMonitor(context)

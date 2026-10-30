@@ -86,6 +86,7 @@ import com.potentplum.dextracker.ui.components.PokeballLoader
 import com.potentplum.dextracker.ui.components.ScreenMessage
 import com.potentplum.dextracker.ui.components.ShellIconButton
 import com.potentplum.dextracker.ui.components.TopTab
+import com.potentplum.dextracker.ui.components.WantedStar
 import com.potentplum.dextracker.ui.theme.Bezel
 import com.potentplum.dextracker.ui.theme.BezelLight
 import com.potentplum.dextracker.ui.theme.BezelSilver
@@ -230,6 +231,7 @@ fun GridContent(
             when {
                 state.pokemon.isNotEmpty() -> PokemonGrid(
                     pokemon = state.pokemon,
+                    wantedDexes = state.wantedDexes,
                     gridState = gridState,
                     onPokemonClick = actions.onPokemonClick,
                     modifier = Modifier.nestedScroll(hideKeyboardOnDrag),
@@ -483,6 +485,7 @@ private fun MenuItem(label: String, icon: ImageVector, onClick: () -> Unit) {
 @Composable
 private fun PokemonGrid(
     pokemon: List<PokemonWithCount>,
+    wantedDexes: Set<Int>,
     gridState: LazyGridState,
     onPokemonClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -496,7 +499,7 @@ private fun PokemonGrid(
         modifier = modifier.fillMaxSize(),
     ) {
         items(pokemon, key = { it.dex }) { entry ->
-            PokemonTile(entry, onClick = { onPokemonClick(entry.dex) })
+            PokemonTile(entry, wanted = entry.dex in wantedDexes, onClick = { onPokemonClick(entry.dex) })
         }
     }
 }
@@ -504,7 +507,7 @@ private fun PokemonGrid(
 private val grayscale = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
 
 @Composable
-private fun PokemonTile(pokemon: PokemonWithCount, onClick: () -> Unit) {
+private fun PokemonTile(pokemon: PokemonWithCount, wanted: Boolean, onClick: () -> Unit) {
     val collected = pokemon.cardCount > 0
     val shape = RoundedCornerShape(12.dp)
     val description = buildString {
@@ -516,6 +519,7 @@ private fun PokemonTile(pokemon: PokemonWithCount, onClick: () -> Unit) {
                 else -> "${pokemon.cardCount} cards collected"
             }
         )
+        if (wanted) append(". A card is on your wanted list")
     }
     Box(
         modifier = Modifier
@@ -565,6 +569,13 @@ private fun PokemonTile(pokemon: PokemonWithCount, onClick: () -> Unit) {
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 5.dp, end = 5.dp),
+            )
+        }
+        if (wanted) {
+            WantedStar(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = if (collected) 30.dp else 5.dp, end = 5.dp),
             )
         }
     }

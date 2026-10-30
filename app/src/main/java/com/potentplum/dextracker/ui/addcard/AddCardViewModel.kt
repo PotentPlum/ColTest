@@ -11,10 +11,13 @@ import com.potentplum.dextracker.data.ConnectivityMonitor
 import com.potentplum.dextracker.data.CopyKey
 import com.potentplum.dextracker.data.PokedexRepository
 import com.potentplum.dextracker.data.SettingsRepository
+import com.potentplum.dextracker.data.WantedRepository
 import com.potentplum.dextracker.data.local.CardWithCopies
+import com.potentplum.dextracker.data.local.WantedCardEntity
 import com.potentplum.dextracker.data.toEntity
 import com.potentplum.dextracker.domain.CardCondition
 import com.potentplum.dextracker.domain.CardLanguage
+import com.potentplum.dextracker.domain.CardNumberOrder
 import com.potentplum.dextracker.domain.CardVariant
 import com.potentplum.dextracker.domain.Generation
 import com.potentplum.dextracker.domain.TcgCard
@@ -54,6 +57,7 @@ data class AddCardUiState(
     val cards: List<TcgCard> = emptyList(),
     /** Owned cards of this Pokémon, by card id. */
     val owned: Map<String, CardWithCopies> = emptyMap(),
+    val wantedIds: Set<String> = emptySet(),
     /** The card whose copies sheet is open. */
     val sheetCard: TcgCard? = null,
     val condition: CardCondition = CardCondition.NEAR_MINT,
@@ -70,12 +74,15 @@ data class CardAdded(
     val pokemonName: String,
     val newCatch: Boolean,
     val completedGeneration: Generation?,
+    /** The card came off the wanted list; Undo puts it back. */
+    val unwanted: WantedCardEntity? = null,
 )
 
 class AddCardViewModel(
     private val dex: Int,
     private val pokedex: PokedexRepository,
     private val cards: CardRepository,
+    private val wanted: WantedRepository,
     private val settings: SettingsRepository,
     connectivity: ConnectivityMonitor,
 ) : ViewModel() {
@@ -131,10 +138,11 @@ class AddCardViewModel(
         name,
         results,
         search,
-        cards.observeOwned(dex),
+        combine(cards.observeOwned(dex), wanted.observeIds()) { owned, wantedIds -> owned to wantedIds },
         environment,
-    ) { name, results, (controls, query), owned, environment ->
+    ) { name, results, (controls, query), (owned, wantedIds), environment ->
         buildState(name, results, controls, query, owned.associateBy { it.card.cardId }, environment)
+            .copy(wantedIds = wantedIds)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AddCardUiState())
 
     init {
@@ -178,12 +186,21 @@ class AddCardViewModel(
         val key = CopyKey(card.id, variant, settings.defaultCondition.value, settings.defaultLanguage.value)
         viewModelScope.launch {
             val result = writeLock.withLock { cards.addCopy(card.toEntity(dex), key) }
-            _added.send(CardAdded(card, key, name.value, result.newCatch, result.completedGeneration))
+            _added.send(CardAdded(card, key, name.value, result.newCatch, result.completedGeneration, result.unwanted))
         }
     }
 
     fun undo(added: CardAdded) {
-        viewModelScope.launch { writeLock.withLock { cards.removeOneCopy(added.key) } }
+        viewModelScope.launch {
+            writeLock.withLock {
+                cards.removeOneCopy(added.key)
+                added.unwanted?.let { wanted.restore(it) }
+            }
+        }
+    }
+
+    fun toggleWanted(card: TcgCard) {
+        viewModelScope.launch { wanted.toggle(card, dex) }
     }
 
     fun changeQuantity(copyId: Long, delta: Int) {
@@ -225,8 +242,8 @@ class AddCardViewModel(
 
         val chronological = compareBy<TcgCard>({ it.releaseDate }, { it.setName })
         val ordered = when (controls.sort) {
-            SortOrder.OLDEST_FIRST -> filtered.sortedWith(chronological.thenBy { it.numberSortKey() })
-            SortOrder.NEWEST_FIRST -> filtered.sortedWith(chronological.reversed().thenBy { it.numberSortKey() })
+            SortOrder.OLDEST_FIRST -> filtered.sortedWith(chronological.thenBy(CardNumberOrder) { it.number })
+            SortOrder.NEWEST_FIRST -> filtered.sortedWith(chronological.reversed().thenBy(CardNumberOrder) { it.number })
         }
         return AddCardUiState(
             pokemonName = name,
@@ -250,7 +267,4 @@ class AddCardViewModel(
         listOf(name, setName, setSeries, number, rarity.orEmpty(), releaseYear)
             .any { it.contains(query, ignoreCase = true) }
 
-    /** Sorts "4" before "25" and keeps promo numbers like "SWSH020" in a stable spot. */
-    private fun TcgCard.numberSortKey(): String =
-        number.takeWhile { it.isDigit() }.padStart(5, '0') + number
 }

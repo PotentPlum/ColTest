@@ -80,6 +80,8 @@ val LocalOnline = compositionLocalOf { true }
 /** The app's top-level sections, switched with [DexTabBar]. */
 enum class TopTab(val label: String) {
     POKEDEX("Pokédex"),
+    SETS("Sets"),
+    WANTED("Wanted"),
     VALUE("Value"),
 }
 
@@ -100,7 +102,7 @@ fun DexTabBar(selected: TopTab, onSelect: (TopTab) -> Unit) {
             val isSelected = tab == selected
             Column(
                 Modifier
-                    .width(112.dp)
+                    .weight(1f)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(8.dp))
                     .semantics { this.selected = isSelected }

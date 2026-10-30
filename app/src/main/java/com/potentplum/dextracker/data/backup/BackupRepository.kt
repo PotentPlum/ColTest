@@ -18,11 +18,17 @@ class BackupRepository(
     private val settings: SettingsRepository,
 ) {
     private val dao = database.collectionDao()
+    private val wantedDao = database.wantedDao()
 
     /** Returns the number of copies written. */
     suspend fun export(uri: Uri): Int = withContext(Dispatchers.IO) {
         val cards = dao.getAll()
-        val text = BackupCodec.encode(cards, settings.includeRegionalForms.value, System.currentTimeMillis())
+        val text = BackupCodec.encode(
+            cards,
+            settings.includeRegionalForms.value,
+            System.currentTimeMillis(),
+            wantedDao.getAll(),
+        )
         val stream = context.contentResolver.openOutputStream(uri) ?: error("Couldn't open $uri")
         stream.use { it.write(text.toByteArray()) }
         cards.sumOf { card -> card.copies.sumOf { it.quantity } }
@@ -31,14 +37,15 @@ class BackupRepository(
     /**
      * Adds the backup's copies to the collection. Copies that are already owned (same card,
      * variant, condition and language) are left as they are, so importing never loses anything.
-     * Counts are in copies.
+     * Wanted cards are added to the wanted list. Counts are in copies.
      */
     suspend fun import(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
         val stream = context.contentResolver.openInputStream(uri) ?: error("Couldn't open $uri")
         val bytes = stream.use { it.readBytes() }
         if (bytes.size > MAX_BYTES) throw InvalidBackupException("File is too large to be a backup")
         val backup = BackupCodec.decode(bytes.decodeToString())
-        val valid = backup.cards.filter { it.card.dex in 1..Generation.MAX_DEX && it.copies.isNotEmpty() }
+        // Dex 0 is a card that doesn't count toward the Pokédex, like a Trainer.
+        val valid = backup.cards.filter { it.card.dex in 0..Generation.MAX_DEX && it.copies.isNotEmpty() }
         var imported = 0
         var skipped = 0
         database.withTransaction {
@@ -48,6 +55,7 @@ class BackupRepository(
                     if (rowId == -1L) skipped += entry.copies[i].quantity else imported += entry.copies[i].quantity
                 }
             }
+            wantedDao.insertAllIfAbsent(backup.wanted.filter { it.dex in 0..Generation.MAX_DEX })
         }
         settings.setIncludeRegionalForms(backup.includeRegionalForms)
         ImportResult(imported = imported, alreadyOwned = skipped)
