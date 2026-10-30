@@ -1,4 +1,4 @@
-# Pokédex Tracker (v1.2)
+# Pokédex Tracker (v1.3)
 
 An Android app for collecting the whole National Pokédex (#1–1025, Gen 1–9) in Pokémon TCG
 cards. It looks like a Pokédex: red shell, blue lens, teal screens. A Pokémon counts as caught
