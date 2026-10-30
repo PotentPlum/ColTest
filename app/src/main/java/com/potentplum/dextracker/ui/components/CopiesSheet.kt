@@ -139,7 +139,7 @@ private fun Header(card: SheetCard, onZoom: () -> Unit) {
             url = card.imageSmall,
             contentDescription = "Zoom ${card.name}",
             modifier = Modifier
-                .width(72.dp)
+                .width(112.dp)
                 .aspectRatio(0.716f)
                 .clickable(onClickLabel = "Zoom", onClick = onZoom),
         )
@@ -147,6 +147,8 @@ private fun Header(card: SheetCard, onZoom: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(card.name.uppercase(), style = DexText.ScreenLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(card.subtitle, style = DexText.ScreenSmall, color = ScreenTextDim)
+            Spacer(Modifier.height(8.dp))
+            Text("TAP THE CARD TO ZOOM", style = DexText.ScreenSmall.copy(fontSize = 10.sp), color = ScreenTextDim)
         }
     }
 }

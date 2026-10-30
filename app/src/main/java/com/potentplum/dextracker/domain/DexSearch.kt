@@ -16,9 +16,11 @@ object DexSearch {
         return needle.isNotEmpty() && needle in name.simplified()
     }
 
+    private val accents = Regex("\\p{Mn}+")
+
     private fun String.simplified(): String =
         Normalizer.normalize(this, Normalizer.Form.NFD)
-            .replace(Regex("\\p{Mn}+"), "")
+            .replace(accents, "")
             .lowercase()
             .filter { it.isLetterOrDigit() || it == '♀' || it == '♂' }
 }

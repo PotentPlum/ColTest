@@ -118,10 +118,10 @@ fun AddCardScreen(
     }
     val actions = remember(viewModel) {
         AddCardActions(
-            onQueryChange = viewModel::setQuery,
+            onQueryChange = viewModel::updateQuery,
             onSelectSet = viewModel::selectSet,
             onToggleSort = viewModel::toggleSort,
-            onTapCard = viewModel::tap,
+            onTapCard = viewModel::openSheet,
             onRetry = { viewModel.load(forceRefresh = true) },
             onAddCopy = viewModel::addCopy,
             onChangeQuantity = viewModel::changeQuantity,
@@ -133,6 +133,7 @@ fun AddCardScreen(
     AddCardContent(
         state = state,
         actions = actions,
+        query = viewModel.query,
         onBack = onBack,
         snackbarHostState = snackbar,
         celebration = celebration,
@@ -178,15 +179,20 @@ fun AddCardContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     celebration: Celebration? = null,
     onCelebrationDone: () -> Unit = {},
+    /** The search box text, which runs ahead of [AddCardUiState.query] while typing. */
+    query: String = state.query,
 ) {
     var preview by remember { mutableStateOf<TcgCard?>(null) }
+    // Fold the hardware strip away while the keyboard is up, to keep results in view.
+    var typing by remember { mutableStateOf(false) }
 
     DexScaffold(
         title = if (state.pokemonName.isBlank()) "Add card" else "Add ${state.pokemonName} card",
         onBack = onBack,
+        compact = typing,
         snackbarHostState = snackbarHostState,
     ) {
-        Controls(state, actions)
+        Controls(state, query, actions, onTypingChange = { typing = it })
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier
@@ -284,13 +290,19 @@ private fun TcgCard.subtitle() =
     listOfNotNull(setName, "#$number", releaseYear, rarity).joinToString(" · ")
 
 @Composable
-private fun Controls(state: AddCardUiState, actions: AddCardActions) {
+private fun Controls(
+    state: AddCardUiState,
+    query: String,
+    actions: AddCardActions,
+    onTypingChange: (Boolean) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         DexSearchField(
-            query = state.query,
+            query = query,
             onQueryChange = actions.onQueryChange,
             placeholder = "Search set, number, rarity…",
             contentDescription = "Search cards",
+            onFocusChange = onTypingChange,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SetDropdown(
@@ -320,7 +332,7 @@ private fun Controls(state: AddCardUiState, actions: AddCardActions) {
                 text = buildString {
                     if (state.cards.size == state.totalValid) append("${state.totalValid} CARDS")
                     else append("${state.cards.size} OF ${state.totalValid}")
-                    append(" · $ownedHere OWNED · TAP TO ADD, HOLD TO ZOOM")
+                    append(" · $ownedHere OWNED · TAP A CARD TO ADD IT")
                 },
                 style = DexText.ScreenSmall.copy(fontSize = 10.sp),
                 color = Color.White.copy(alpha = 0.85f),
@@ -443,14 +455,13 @@ private fun ResultCard(
     onLongClick: () -> Unit,
 ) {
     val owned = ownedCopies > 0
-    val opensSheet = owned || card.variants.size > 1
     val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = Modifier
             .clip(shape)
             .combinedClickable(
                 role = Role.Button,
-                onClickLabel = if (opensSheet) "Choose variant and copies" else "Add to collection",
+                onClickLabel = if (owned) "Edit copies" else "View and add",
                 onLongClickLabel = "Zoom",
                 onClick = onClick,
                 onLongClick = onLongClick,

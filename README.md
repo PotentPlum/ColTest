@@ -51,6 +51,7 @@ The rules are covered by `CardRulesTest`.
    * An **All / Missing / Caught** filter. "Missing" is your to-catch list.
    * **Search** by name or number. "pika", "mr mime", "flabebe", "25" and "#025" all work. A
      search covers every generation. Pressing search when there's exactly one match opens it.
+     While you type, the header and generation tabs fold away so the results stay in view.
    * Each tile shows the number, the name and a sprite. Pokémon you have no cards for are gray.
      Collected ones are in color with a yellow badge showing how many unique variants you own.
    * The scroll position is kept when you come back from a Pokémon. The Pokédex hardware strip
@@ -71,13 +72,14 @@ The rules are covered by `CardRulesTest`.
    * **Filter by Set** dropdown (each set shows its year and card count)
    * **Sort by year** toggle (oldest/newest)
    * Free-text search over set, series, number, rarity and year
-   * **Tap a card to add it.** A card printed in one variant is added straight away. A card
-     with several variants (Holo, Reverse Holo, 1st Edition, Unlimited…), or one you already
-     own, opens the copies sheet so you can pick the variant or change quantities.
+   * **Tap a card to open it.** The copies sheet shows the card larger (tap it to zoom), with
+     one add button per variant (Holo, Reverse Holo, 1st Edition, Unlimited…) and, for cards
+     you own, your copies with quantity steppers. Nothing is added until you press a button.
    * New copies get the condition and language you used last, so adding a pile of near-mint
-     English cards is one tap each.
+     English cards is two taps each.
    * Every add shows an **Undo** snackbar, and you stay on the screen so you can add several
-     cards in a row. Long-press to zoom. Owned cards get a yellow frame and an **OWNED ×n** tag.
+     cards in a row. Long-press a card to zoom. Owned cards get a yellow frame and an
+     **OWNED ×n** tag.
    * When you're offline, the screen says so and searches again by itself once you reconnect.
    * Your first card of a Pokémon gets a **"Gotcha!"** banner with a wobbling Poké Ball and a
      haptic buzz. Catching the last missing Pokémon of a generation shows **"Gen N complete!"**.

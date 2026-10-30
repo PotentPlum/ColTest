@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -131,6 +133,7 @@ fun DexTabBar(selected: TopTab, onSelect: (TopTab) -> Unit) {
  * a small lens moves into the title plate, giving the content more room. [actions] sit at
  * the end of the title plate.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DexScaffold(
     title: String,
@@ -142,6 +145,8 @@ fun DexScaffold(
     floatingAction: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // The tab bar would only sit on top of the keyboard, taking space from the content.
+    val showBottomBar = bottomBar != null && !WindowInsets.isImeVisible
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -164,7 +169,7 @@ fun DexScaffold(
                     .padding(horizontal = 12.dp),
                 content = content,
             )
-            bottomBar?.invoke()
+            if (showBottomBar) bottomBar?.invoke()
         }
         floatingAction?.invoke(this)
         if (snackbarHostState != null) {
@@ -172,7 +177,7 @@ fun DexScaffold(
                 snackbarHostState,
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = if (bottomBar != null) 64.dp else 20.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = if (showBottomBar) 64.dp else 20.dp),
             )
         }
     }
