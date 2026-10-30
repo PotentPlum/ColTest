@@ -182,3 +182,35 @@ fun <T> DexSegmentedControl(
         }
     }
 }
+
+/** Compact selectable chip for picking one value, e.g. a card's condition or language. */
+@Composable
+fun DexChoiceChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        modifier
+            .heightIn(min = 36.dp)
+            .clip(shape)
+            .background(if (selected) DexYellow else ScreenDeep)
+            .border(1.dp, if (selected) DexYellowDark else ScreenLine, shape)
+            .semantics {
+                this.selected = selected
+                if (contentDescription != null) this.contentDescription = contentDescription
+            }
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = if (selected) DexText.Label.copy(fontSize = 13.sp) else DexText.ScreenSmall.copy(fontSize = 13.sp),
+            color = if (selected) Ink else ScreenText,
+        )
+    }
+}

@@ -41,6 +41,11 @@ class PokedexRepository(
 
     suspend fun cachedName(dex: Int): String? = dao.get(dex)?.name
 
+    suspend fun cachedDetailDexes(): List<Int> = dao.cachedDetailDexes()
+
+    /** How many Pokédex pages are saved for offline use. */
+    fun observeCachedDetailCount(): Flow<Int> = dao.observeCachedDetailCount()
+
     /** Returns cached detail if present, otherwise fetches it from PokeAPI and caches it. */
     suspend fun detail(dex: Int): PokemonDetailEntity {
         dao.getDetail(dex)?.let { return it }

@@ -59,10 +59,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.potentplum.dextracker.domain.CardCondition
+import com.potentplum.dextracker.domain.CardLanguage
+import com.potentplum.dextracker.domain.CardVariant
 import com.potentplum.dextracker.domain.TcgCard
 import com.potentplum.dextracker.ui.components.CardDetailDialog
 import com.potentplum.dextracker.ui.components.Celebration
 import com.potentplum.dextracker.ui.components.CelebrationBanner
+import com.potentplum.dextracker.ui.components.CopiesSheet
 import com.potentplum.dextracker.ui.components.DexInset
 import com.potentplum.dextracker.ui.components.DexScaffold
 import com.potentplum.dextracker.ui.components.DexScreen
@@ -70,6 +74,7 @@ import com.potentplum.dextracker.ui.components.DexSearchField
 import com.potentplum.dextracker.ui.components.PokeballLoader
 import com.potentplum.dextracker.ui.components.ScreenButton
 import com.potentplum.dextracker.ui.components.ScreenMessage
+import com.potentplum.dextracker.ui.components.SheetCard
 import com.potentplum.dextracker.ui.components.TcgCardImage
 import com.potentplum.dextracker.ui.theme.DexText
 import com.potentplum.dextracker.ui.theme.DexYellow
@@ -94,13 +99,12 @@ fun AddCardScreen(
     val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(viewModel) {
-        viewModel.changes.collect { change ->
+        viewModel.added.collect { change ->
             haptics.performHapticFeedback(
-                if (change is CollectionChange.Added && change.newCatch) HapticFeedbackType.LongPress
-                else HapticFeedbackType.TextHandleMove,
+                if (change.newCatch) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove,
             )
-            if (change is CollectionChange.Added && change.newCatch) celebration = change.toCelebration()
-            // Each change gets its own Undo, so replace any snackbar still showing.
+            if (change.newCatch) celebration = change.toCelebration()
+            // Each add gets its own Undo, so replace any snackbar still showing.
             snackbar.currentSnackbarData?.dismiss()
             launch {
                 val result = snackbar.showSnackbar(
@@ -117,8 +121,13 @@ fun AddCardScreen(
             onQueryChange = viewModel::setQuery,
             onSelectSet = viewModel::selectSet,
             onToggleSort = viewModel::toggleSort,
-            onToggleCard = viewModel::toggle,
+            onTapCard = viewModel::tap,
             onRetry = { viewModel.load(forceRefresh = true) },
+            onAddCopy = viewModel::addCopy,
+            onChangeQuantity = viewModel::changeQuantity,
+            onCloseSheet = viewModel::closeSheet,
+            onConditionChange = viewModel::setDefaultCondition,
+            onLanguageChange = viewModel::setDefaultLanguage,
         )
     }
     AddCardContent(
@@ -131,15 +140,16 @@ fun AddCardScreen(
     )
 }
 
-private fun CollectionChange.message(): String {
-    val label = "${card.setName} #${card.number}"
-    return when (this) {
-        is CollectionChange.Added -> "Added $label"
-        is CollectionChange.Removed -> "Removed $label"
-    }
+private fun CardAdded.message(): String {
+    val details = listOfNotNull(
+        key.variant.takeIf { card.variants.size > 1 }?.label,
+        key.condition.code,
+        key.language.code,
+    ).joinToString(" · ")
+    return "Added ${card.setName} #${card.number} · $details"
 }
 
-private fun CollectionChange.Added.toCelebration(): Celebration {
+private fun CardAdded.toCelebration(): Celebration {
     val who = pokemonName.ifBlank { card.name }
     return when (val gen = completedGeneration) {
         null -> Celebration("Gotcha!", "$who was registered in your Pokédex.")
@@ -151,8 +161,13 @@ class AddCardActions(
     val onQueryChange: (String) -> Unit,
     val onSelectSet: (setId: String?) -> Unit,
     val onToggleSort: () -> Unit,
-    val onToggleCard: (TcgCard) -> Unit,
+    val onTapCard: (TcgCard) -> Unit,
     val onRetry: () -> Unit,
+    val onAddCopy: (TcgCard, CardVariant) -> Unit,
+    val onChangeQuantity: (copyId: Long, delta: Int) -> Unit,
+    val onCloseSheet: () -> Unit,
+    val onConditionChange: (CardCondition) -> Unit,
+    val onLanguageChange: (CardLanguage) -> Unit,
 )
 
 @Composable
@@ -186,6 +201,12 @@ fun AddCardContent(
                             "Searching every ${state.pokemonName.ifBlank { "card" }} ever printed…",
                             Modifier.align(Alignment.Center),
                         )
+                        state.failed && !state.online -> ScreenMessage(
+                            title = "You're offline",
+                            body = "Card search needs an internet connection. Your Pokédex and collection " +
+                                "still work offline. The search runs again when you reconnect.",
+                            modifier = Modifier.align(Alignment.Center),
+                        )
                         state.failed -> ScreenMessage(
                             title = "No signal",
                             body = "The card database didn't answer. Check your connection and try again.",
@@ -210,7 +231,7 @@ fun AddCardContent(
                         )
                         else -> ResultsGrid(
                             state = state,
-                            onCardClick = actions.onToggleCard,
+                            onCardClick = actions.onTapCard,
                             onCardLongClick = { preview = it },
                         )
                     }
@@ -224,6 +245,28 @@ fun AddCardContent(
                     .padding(top = 16.dp),
             )
         }
+    }
+
+    state.sheetCard?.let { card ->
+        CopiesSheet(
+            card = SheetCard(
+                cardId = card.id,
+                name = card.name,
+                subtitle = card.subtitle(),
+                imageSmall = card.imageSmall,
+                imageLarge = card.imageLarge,
+                variantOptions = CardVariant.optionsFor(card.variants),
+            ),
+            copies = state.owned[card.id]?.copies.orEmpty(),
+            condition = state.condition,
+            language = state.language,
+            onConditionChange = actions.onConditionChange,
+            onLanguageChange = actions.onLanguageChange,
+            onAdd = { variant -> actions.onAddCopy(card, variant) },
+            onChangeQuantity = actions.onChangeQuantity,
+            onZoom = { preview = card },
+            onDismiss = actions.onCloseSheet,
+        )
     }
 
     preview?.let { card ->
@@ -383,7 +426,7 @@ private fun ResultsGrid(
         items(state.cards, key = { it.id }) { card ->
             ResultCard(
                 card = card,
-                owned = card.id in state.ownedIds,
+                ownedCopies = state.owned[card.id]?.copies?.sumOf { it.quantity } ?: 0,
                 onClick = { onCardClick(card) },
                 onLongClick = { onCardLongClick(card) },
             )
@@ -395,17 +438,19 @@ private fun ResultsGrid(
 @Composable
 private fun ResultCard(
     card: TcgCard,
-    owned: Boolean,
+    ownedCopies: Int,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    val owned = ownedCopies > 0
+    val opensSheet = owned || card.variants.size > 1
     val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = Modifier
             .clip(shape)
             .combinedClickable(
                 role = Role.Button,
-                onClickLabel = if (owned) "Remove from collection" else "Add to collection",
+                onClickLabel = if (opensSheet) "Choose variant and copies" else "Add to collection",
                 onLongClickLabel = "Zoom",
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -414,7 +459,8 @@ private fun ResultCard(
                 this.selected = owned
                 contentDescription = buildString {
                     append("${card.name}, ${card.subtitle()}")
-                    if (owned) append(", already in collection")
+                    if (owned) append(", $ownedCopies in collection")
+                    if (card.variants.size > 1) append(", ${card.variants.size} variants")
                 }
             },
     ) {
@@ -432,7 +478,7 @@ private fun ResultCard(
         ) {
             TcgCardImage(url = card.imageSmall, modifier = Modifier.fillMaxSize())
             AnimatedOwnedTag(
-                visible = owned,
+                copies = ownedCopies,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 4.dp),
@@ -448,7 +494,7 @@ private fun ResultCard(
             modifier = Modifier.padding(horizontal = 2.dp),
         )
         Text(
-            "${card.releaseYear} · #${card.number}",
+            "${card.releaseYear} · #${card.number}" + if (card.variants.size > 1) " · ${card.variants.size} var." else "",
             style = DexText.ScreenSmall.copy(fontSize = 10.sp),
             color = ScreenTextDim,
             maxLines = 1,
@@ -459,19 +505,22 @@ private fun ResultCard(
 
 /** Pops the OWNED tag in when a card is added, so the tap visibly lands. */
 @Composable
-private fun AnimatedOwnedTag(visible: Boolean, modifier: Modifier = Modifier) {
+private fun AnimatedOwnedTag(copies: Int, modifier: Modifier = Modifier) {
+    // Keep the last count while the tag animates out.
+    var shown by remember { mutableStateOf(copies) }
+    if (copies > 0) shown = copies
     AnimatedVisibility(
-        visible = visible,
+        visible = copies > 0,
         enter = scaleIn(initialScale = 0.4f) + fadeIn(),
         exit = scaleOut() + fadeOut(),
         modifier = modifier,
     ) {
-        OwnedTag()
+        OwnedTag(shown)
     }
 }
 
 @Composable
-private fun OwnedTag(modifier: Modifier = Modifier) {
+private fun OwnedTag(copies: Int, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(6.dp)
     Row(
         modifier
@@ -483,7 +532,7 @@ private fun OwnedTag(modifier: Modifier = Modifier) {
     ) {
         Icon(Icons.Rounded.Check, contentDescription = null, tint = Ink, modifier = Modifier.size(12.dp))
         Spacer(Modifier.width(2.dp))
-        Text("OWNED", style = DexText.Label.copy(fontSize = 10.sp), color = Ink)
+        Text(if (copies > 1) "OWNED ×$copies" else "OWNED", style = DexText.Label.copy(fontSize = 10.sp), color = Ink)
     }
 }
 

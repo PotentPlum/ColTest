@@ -3,6 +3,9 @@ package com.potentplum.dextracker.ui.grid
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.potentplum.dextracker.data.ConnectivityMonitor
+import com.potentplum.dextracker.data.DownloadProgress
+import com.potentplum.dextracker.data.OfflineDownloader
 import com.potentplum.dextracker.data.PokedexRepository
 import com.potentplum.dextracker.data.SettingsRepository
 import com.potentplum.dextracker.data.backup.BackupRepository
@@ -17,6 +20,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -49,7 +54,13 @@ data class GridUiState(
     val syncing: Boolean = true,
     val syncFailed: Boolean = false,
     val includeRegionalForms: Boolean = false,
+    val online: Boolean = true,
+    /** Pokédex pages saved for offline use. */
+    val savedPages: Int = 0,
+    val download: DownloadProgress = DownloadProgress(),
 ) {
+    val allSaved: Boolean get() = savedPages >= Generation.MAX_DEX
+
     /** A search looks across every generation, whatever tab is selected. */
     val searching: Boolean get() = query.isNotBlank()
 
@@ -60,7 +71,11 @@ class GridViewModel(
     private val repository: PokedexRepository,
     private val backup: BackupRepository,
     private val settings: SettingsRepository,
+    connectivity: ConnectivityMonitor,
+    private val downloader: OfflineDownloader,
 ) : ViewModel() {
+    private data class Offline(val online: Boolean, val savedPages: Int, val download: DownloadProgress)
+
     private data class Controls(
         val scope: Generation? = null,
         val filter: CaughtFilter = CaughtFilter.ALL,
@@ -76,20 +91,51 @@ class GridViewModel(
     /** One-off status messages (backup results) for the snackbar. */
     val messages: Flow<String> = _messages.receiveAsFlow()
 
+    private val offline = combine(
+        connectivity.online,
+        repository.observeCachedDetailCount(),
+        downloader.progress,
+        ::Offline,
+    )
+
     val uiState: StateFlow<GridUiState> = combine(
         repository.observeAll(),
         controls,
         sync,
         settings.includeRegionalForms,
-    ) { all, controls, sync, regional ->
-        buildState(all, controls, sync, regional)
+        offline,
+    ) { all, controls, sync, regional, offline ->
+        buildState(all, controls, sync, regional).copy(
+            online = offline.online,
+            savedPages = offline.savedPages,
+            download = offline.download,
+        )
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GridUiState())
 
     init {
         syncSpecies()
+        // Announce each finished offline download once.
+        viewModelScope.launch {
+            downloader.progress.distinctUntilChangedBy { it.finishedRuns }.drop(1).collect { result ->
+                _messages.send(
+                    if (result.failed == 0) "Pokédex saved: everything works offline now"
+                    else "Saved, but ${result.failed} pages couldn't load. Try again later to finish."
+                )
+            }
+        }
+        // A failed first sync (no connection) retries by itself once back online.
+        viewModelScope.launch {
+            connectivity.online.drop(1).collect { online ->
+                if (online && sync.value.failed) syncSpecies()
+            }
+        }
     }
+
+    fun startOfflineDownload() = downloader.start()
+
+    fun cancelOfflineDownload() = downloader.cancel()
 
     /** Picking a tab also clears the search, since a search spans every generation. */
     fun selectScope(scope: Generation?) = controls.update { it.copy(scope = scope, query = "") }

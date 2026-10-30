@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,12 +45,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.potentplum.dextracker.ui.theme.Bezel
 import com.potentplum.dextracker.ui.theme.BezelLight
 import com.potentplum.dextracker.ui.theme.BezelSilver
@@ -58,6 +63,7 @@ import com.potentplum.dextracker.ui.theme.DexRedDark
 import com.potentplum.dextracker.ui.theme.DexRedDeep
 import com.potentplum.dextracker.ui.theme.DexRedLight
 import com.potentplum.dextracker.ui.theme.DexText
+import com.potentplum.dextracker.ui.theme.DexYellow
 import com.potentplum.dextracker.ui.theme.LedGreen
 import com.potentplum.dextracker.ui.theme.LedRed
 import com.potentplum.dextracker.ui.theme.LedYellow
@@ -65,6 +71,57 @@ import com.potentplum.dextracker.ui.theme.LensBlue
 import com.potentplum.dextracker.ui.theme.Screen
 import com.potentplum.dextracker.ui.theme.ScreenDeep
 import com.potentplum.dextracker.ui.theme.ScreenLine
+
+/** Whether the device is online; drives the hardware strip's connection LED. */
+val LocalOnline = compositionLocalOf { true }
+
+/** The app's top-level sections, switched with [DexTabBar]. */
+enum class TopTab(val label: String) {
+    POKEDEX("Pokédex"),
+    VALUE("Value"),
+}
+
+/**
+ * A deliberately quiet tab strip along the bottom of the shell: small text, with only a thin
+ * yellow line marking the current tab. Collecting Pokémon stays the focus.
+ */
+@Composable
+fun DexTabBar(selected: TopTab, onSelect: (TopTab) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        TopTab.entries.forEach { tab ->
+            val isSelected = tab == selected
+            Column(
+                Modifier
+                    .width(112.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(8.dp))
+                    .semantics { this.selected = isSelected }
+                    .clickable(role = Role.Tab) { onSelect(tab) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 24.dp, height = 2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(if (isSelected) DexYellow else Color.Transparent),
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    tab.label.uppercase(),
+                    style = DexText.Label.copy(fontSize = 11.sp, letterSpacing = 1.5.sp),
+                    color = Color.White.copy(alpha = if (isSelected) 0.95f else 0.55f),
+                )
+            }
+        }
+    }
+}
 
 /**
  * The red Pokédex body every screen sits in: hardware strip with the lens and LEDs,
@@ -81,6 +138,7 @@ fun DexScaffold(
     compact: Boolean = false,
     actions: (@Composable () -> Unit)? = null,
     snackbarHostState: SnackbarHostState? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
     floatingAction: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -106,6 +164,7 @@ fun DexScaffold(
                     .padding(horizontal = 12.dp),
                 content = content,
             )
+            bottomBar?.invoke()
         }
         floatingAction?.invoke(this)
         if (snackbarHostState != null) {
@@ -113,7 +172,7 @@ fun DexScaffold(
                 snackbarHostState,
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp, vertical = 20.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = if (bottomBar != null) 64.dp else 20.dp),
             )
         }
     }
@@ -143,8 +202,13 @@ private fun HardwareStrip() {
             }
         }
         Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Led(LedGreen, 9.dp)
+        // The green LED doubles as a connection light: it goes dark while offline.
+        val online = LocalOnline.current
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.semantics { contentDescription = if (online) "Online" else "Offline" },
+        ) {
+            Led(if (online) LedGreen else BezelLight, 9.dp)
             Led(LedYellow, 9.dp)
             Led(LedRed, 9.dp)
         }

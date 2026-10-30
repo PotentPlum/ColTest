@@ -32,9 +32,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.OfflinePin
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -75,15 +77,18 @@ import com.potentplum.dextracker.ui.components.DexScreen
 import com.potentplum.dextracker.ui.components.DexSearchField
 import com.potentplum.dextracker.ui.components.DexSegmentedControl
 import com.potentplum.dextracker.ui.components.DexTab
+import com.potentplum.dextracker.ui.components.DexTabBar
 import com.potentplum.dextracker.ui.components.PokeballLoader
 import com.potentplum.dextracker.ui.components.ScreenMessage
 import com.potentplum.dextracker.ui.components.ShellIconButton
+import com.potentplum.dextracker.ui.components.TopTab
 import com.potentplum.dextracker.ui.theme.Bezel
 import com.potentplum.dextracker.ui.theme.BezelLight
 import com.potentplum.dextracker.ui.theme.BezelSilver
 import com.potentplum.dextracker.ui.theme.DexText
 import com.potentplum.dextracker.ui.theme.DexYellow
 import com.potentplum.dextracker.ui.theme.Ink
+import com.potentplum.dextracker.ui.theme.LedRed
 import com.potentplum.dextracker.ui.theme.MissingTile
 import com.potentplum.dextracker.ui.theme.Screen
 import com.potentplum.dextracker.ui.theme.ScreenDeep
@@ -94,7 +99,11 @@ import com.potentplum.dextracker.ui.theme.ScreenTextDim
 import java.time.LocalDate
 
 @Composable
-fun GridScreen(viewModel: GridViewModel, onPokemonClick: (Int) -> Unit) {
+fun GridScreen(
+    viewModel: GridViewModel,
+    onPokemonClick: (Int) -> Unit,
+    onSelectTab: (TopTab) -> Unit,
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) {
@@ -119,6 +128,9 @@ fun GridScreen(viewModel: GridViewModel, onPokemonClick: (Int) -> Unit) {
             // Some file managers label .json files as plain text or a generic binary.
             onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
             onToggleRegionalForms = viewModel::setIncludeRegionalForms,
+            onStartOfflineDownload = viewModel::startOfflineDownload,
+            onCancelOfflineDownload = viewModel::cancelOfflineDownload,
+            onSelectTab = onSelectTab,
         )
     }
     GridContent(state, actions, snackbar)
@@ -134,6 +146,9 @@ class GridActions(
     val onExport: () -> Unit,
     val onImport: () -> Unit,
     val onToggleRegionalForms: (Boolean) -> Unit,
+    val onStartOfflineDownload: () -> Unit,
+    val onCancelOfflineDownload: () -> Unit,
+    val onSelectTab: (TopTab) -> Unit,
 )
 
 @Composable
@@ -160,10 +175,11 @@ fun GridContent(
     DexScaffold(
         title = "Pokédex Tracker",
         compact = scrolled,
-        actions = { OverflowMenu(state.includeRegionalForms, actions) },
+        actions = { OverflowMenu(state, actions) },
         snackbarHostState = snackbarHostState,
+        bottomBar = { DexTabBar(TopTab.POKEDEX, actions.onSelectTab) },
     ) {
-        NationalCounter(state)
+        NationalCounter(state, onCancelDownload = actions.onCancelOfflineDownload)
         Spacer(Modifier.height(8.dp))
         DexSearchField(
             query = state.query,
@@ -211,7 +227,7 @@ fun GridContent(
 
 /** National Dex progress, always visible whatever tab is selected. */
 @Composable
-private fun NationalCounter(state: GridUiState) {
+private fun NationalCounter(state: GridUiState, onCancelDownload: () -> Unit) {
     val national = state.national
     val percent = "%.1f%%".format(national.fraction * 100)
     DexScreen(Modifier.fillMaxWidth(), contentPadding = 10.dp, showGrid = false) {
@@ -226,6 +242,9 @@ private fun NationalCounter(state: GridUiState) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("NATIONAL DEX", style = DexText.ScreenSmall, color = ScreenTextDim)
                 Spacer(Modifier.weight(1f))
+                if (!state.online) {
+                    Text("● OFFLINE  ", style = DexText.ScreenSmall, color = LedRed)
+                }
                 Text(percent, style = DexText.ScreenSmall, color = ScreenTextDim)
             }
             Text(
@@ -235,7 +254,37 @@ private fun NationalCounter(state: GridUiState) {
             )
             Spacer(Modifier.height(6.dp))
             ProgressBar(national.fraction)
+            if (state.download.running) {
+                DownloadLine(state.download.done, state.download.total, onCancelDownload)
+            }
         }
+    }
+}
+
+/** Progress of saving the Pokédex for offline use, with a way to stop it. */
+@Composable
+private fun DownloadLine(done: Int, total: Int, onCancel: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (total == 0) "SAVING FOR OFFLINE…" else "SAVING FOR OFFLINE $done/$total",
+            style = DexText.ScreenSmall,
+            color = ScreenTextDim,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "STOP",
+            style = DexText.Label.copy(fontSize = 11.sp),
+            color = DexYellow,
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(onClickLabel = "Stop saving for offline", onClick = onCancel)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
 }
 
@@ -316,7 +365,8 @@ private fun EmptyResults(state: GridUiState, onClear: () -> Unit, modifier: Modi
 }
 
 @Composable
-private fun OverflowMenu(includeRegionalForms: Boolean, actions: GridActions) {
+private fun OverflowMenu(state: GridUiState, actions: GridActions) {
+    val includeRegionalForms = state.includeRegionalForms
     var expanded by remember { mutableStateOf(false) }
     Box {
         ShellIconButton(Icons.Rounded.MoreVert, contentDescription = "More options", onClick = { expanded = true })
@@ -333,6 +383,38 @@ private fun OverflowMenu(includeRegionalForms: Boolean, actions: GridActions) {
                 expanded = false
                 actions.onImport()
             }
+            HorizontalDivider(color = ScreenLine)
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(
+                            if (state.download.running) "Saving for offline…" else "Save Pokédex for offline",
+                            style = DexText.ScreenSmall.copy(fontSize = 13.sp),
+                            color = ScreenText,
+                        )
+                        Text(
+                            when {
+                                state.allSaved -> "All ${Generation.MAX_DEX} pages saved"
+                                else -> "${state.savedPages} of ${Generation.MAX_DEX} pages saved · needs a connection"
+                            },
+                            style = DexText.ScreenSmall.copy(fontSize = 11.sp),
+                            color = ScreenTextDim,
+                        )
+                    }
+                },
+                leadingIcon = {
+                    Icon(
+                        if (state.allSaved) Icons.Rounded.OfflinePin else Icons.Rounded.CloudDownload,
+                        contentDescription = null,
+                        tint = ScreenGlow,
+                    )
+                },
+                enabled = state.online && !state.download.running,
+                onClick = {
+                    expanded = false
+                    actions.onStartOfflineDownload()
+                },
+            )
             HorizontalDivider(color = ScreenLine)
             DropdownMenuItem(
                 text = {

@@ -1,12 +1,15 @@
 package com.potentplum.dextracker.data.backup
 
-import com.potentplum.dextracker.data.local.OwnedCardEntity
+import com.potentplum.dextracker.data.local.CardEntity
+import com.potentplum.dextracker.data.local.CardWithCopies
+import com.potentplum.dextracker.data.local.OwnedCopyEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackupCodecTest {
-    private val pikachu = OwnedCardEntity(
+    private val pikachu = CardEntity(
         cardId = "base1-58",
         dex = 25,
         name = "Pikachu",
@@ -15,31 +18,57 @@ class BackupCodecTest {
         setSeries = "Base",
         releaseDate = "1999/01/09",
         number = "58",
-        rarity = null,
+        rarity = "Common",
         imageSmall = "https://images.pokemontcg.io/base1/58.png",
         imageLarge = "https://images.pokemontcg.io/base1/58_hires.png",
-        addedAt = 1_700_000_000_000,
+        variants = "1stEdition,unlimited",
+        priceTrend = 14.44,
+        priceReverseTrend = null,
+        pricesUpdatedAt = 5L,
+    )
+
+    private val copies = listOf(
+        OwnedCopyEntity(1, "base1-58", "1stEdition", "EX", "DE", 1, 100),
+        OwnedCopyEntity(2, "base1-58", "unlimited", "NM", "EN", 3, 200),
     )
 
     @Test
-    fun `round trips cards and settings`() {
-        val text = BackupCodec.encode(listOf(pikachu), includeRegionalForms = true, exportedAt = 1L)
+    fun `round trips cards, copies and settings`() {
+        val text = BackupCodec.encode(listOf(CardWithCopies(pikachu, copies)), includeRegionalForms = true, exportedAt = 1L)
         val decoded = BackupCodec.decode(text)
-        assertEquals(listOf(pikachu), decoded.cards)
+        val card = decoded.cards.single()
         assertTrue(decoded.includeRegionalForms)
+        // Prices aren't part of a backup; they're refreshed from Cardmarket.
+        assertEquals(pikachu.copy(priceTrend = null, pricesUpdatedAt = null), card.card)
+        // Row ids are local to a database, so restored copies get new ones.
+        assertEquals(copies.map { it.copy(id = 0) }, card.copies)
     }
 
     @Test
-    fun `ignores fields added by newer minor changes`() {
+    fun `reads version 1 backups as one unspecified copy per card`() {
         val text = """
-            {"format":"pokedex-tracker-backup","version":1,"exportedAt":1,"extra":true,
+            {"format":"pokedex-tracker-backup","version":1,"exportedAt":1,
              "cards":[{"cardId":"a","dex":1,"name":"Bulbasaur","setId":"s","setName":"S","setSeries":"S",
-                       "releaseDate":"1999/01/09","number":"44","imageSmall":"x","imageLarge":"y",
-                       "addedAt":5,"condition":"NM"}]}
+                       "releaseDate":"1999/01/09","number":"44","imageSmall":"x","imageLarge":"y","addedAt":5}]}
         """.trimIndent()
-        val decoded = BackupCodec.decode(text)
-        assertEquals("a", decoded.cards.single().cardId)
-        assertEquals(null, decoded.cards.single().rarity)
+        val card = BackupCodec.decode(text).cards.single()
+        assertEquals("a", card.card.cardId)
+        assertNull(card.card.rarity)
+        assertEquals(listOf(OwnedCopyEntity(0, "a", "unspecified", "NM", "EN", 1, 5)), card.copies)
+    }
+
+    @Test
+    fun `ignores unknown fields and drops empty copies`() {
+        val text = """
+            {"format":"pokedex-tracker-backup","version":2,"exportedAt":1,"extra":true,
+             "cards":[{"cardId":"a","dex":1,"name":"Bulbasaur","setId":"s","setName":"S","setSeries":"S",
+                       "releaseDate":"1999/01/09","number":"44","imageSmall":"x","imageLarge":"y","grade":10,
+                       "copies":[{"variant":"holofoil","condition":"NM","language":"EN","quantity":0,"addedAt":1},
+                                 {"variant":"normal","condition":"GD","language":"FR","quantity":2,"addedAt":1}]}]}
+        """.trimIndent()
+        val copy = BackupCodec.decode(text).cards.single().copies.single()
+        assertEquals("normal", copy.variant)
+        assertEquals(2, copy.quantity)
     }
 
     @Test(expected = InvalidBackupException::class)
