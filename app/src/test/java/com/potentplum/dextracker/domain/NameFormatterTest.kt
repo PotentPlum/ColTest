@@ -18,10 +18,15 @@ class NameFormatterTest {
     }
 
     @Test
-    fun `generation ranges cover the national dex without gaps`() {
-        assertEquals(Generation.GEN_1, Generation.forDex(151))
-        assertEquals(Generation.GEN_2, Generation.forDex(152))
-        assertEquals(Generation.GEN_3, Generation.forDex(386))
-        assertEquals("#025", 25.dexLabel())
+    fun `handles special gen 4 to 9 names`() {
+        assertEquals("Mime Jr.", NameFormatter.fromSlug("mime-jr"))
+        assertEquals("Porygon-Z", NameFormatter.fromSlug("porygon-z"))
+        assertEquals("Flabébé", NameFormatter.fromSlug("flabebe"))
+        assertEquals("Type: Null", NameFormatter.fromSlug("type-null"))
+        assertEquals("Kommo-o", NameFormatter.fromSlug("kommo-o"))
+        assertEquals("Sirfetch'd", NameFormatter.fromSlug("sirfetchd"))
+        assertEquals("Chi-Yu", NameFormatter.fromSlug("chi-yu"))
+        assertEquals("Tapu Koko", NameFormatter.fromSlug("tapu-koko"))
+        assertEquals("Iron Valiant", NameFormatter.fromSlug("iron-valiant"))
     }
 }

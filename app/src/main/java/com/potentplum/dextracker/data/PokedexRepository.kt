@@ -17,10 +17,12 @@ class PokedexRepository(
     private val api: PokeApiService,
     private val dao: PokemonDao,
 ) {
-    fun observeGeneration(generation: Generation): Flow<List<PokemonWithCount>> =
-        dao.observeGeneration(generation.number)
+    fun observeAll(): Flow<List<PokemonWithCount>> = dao.observeAll()
 
-    /** Caches the Gen 1–3 species list once; afterwards the grid works fully offline. */
+    /**
+     * Caches the National Dex species list once; afterwards the grid works fully offline.
+     * Installs that cached a shorter list (v1.0 stopped at Gen 3) top up on next launch.
+     */
     suspend fun ensureSpeciesCached() {
         if (dao.count() >= Generation.MAX_DEX) return
         val species = api.speciesList(limit = Generation.MAX_DEX).results
@@ -38,6 +40,11 @@ class PokedexRepository(
     }
 
     suspend fun cachedName(dex: Int): String? = dao.get(dex)?.name
+
+    suspend fun cachedDetailDexes(): List<Int> = dao.cachedDetailDexes()
+
+    /** How many Pokédex pages are saved for offline use. */
+    fun observeCachedDetailCount(): Flow<Int> = dao.observeCachedDetailCount()
 
     /** Returns cached detail if present, otherwise fetches it from PokeAPI and caches it. */
     suspend fun detail(dex: Int): PokemonDetailEntity {

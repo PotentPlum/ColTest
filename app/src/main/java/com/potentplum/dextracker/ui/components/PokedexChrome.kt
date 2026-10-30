@@ -1,5 +1,10 @@
 package com.potentplum.dextracker.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,8 +30,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,13 +43,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.potentplum.dextracker.ui.theme.Bezel
 import com.potentplum.dextracker.ui.theme.BezelLight
 import com.potentplum.dextracker.ui.theme.BezelSilver
@@ -51,6 +63,7 @@ import com.potentplum.dextracker.ui.theme.DexRedDark
 import com.potentplum.dextracker.ui.theme.DexRedDeep
 import com.potentplum.dextracker.ui.theme.DexRedLight
 import com.potentplum.dextracker.ui.theme.DexText
+import com.potentplum.dextracker.ui.theme.DexYellow
 import com.potentplum.dextracker.ui.theme.LedGreen
 import com.potentplum.dextracker.ui.theme.LedRed
 import com.potentplum.dextracker.ui.theme.LedYellow
@@ -59,14 +72,73 @@ import com.potentplum.dextracker.ui.theme.Screen
 import com.potentplum.dextracker.ui.theme.ScreenDeep
 import com.potentplum.dextracker.ui.theme.ScreenLine
 
+/** Whether the device is online; drives the hardware strip's connection LED. */
+val LocalOnline = compositionLocalOf { true }
+
+/** The app's top-level sections, switched with [DexTabBar]. */
+enum class TopTab(val label: String) {
+    POKEDEX("Pokédex"),
+    VALUE("Value"),
+}
+
+/**
+ * A deliberately quiet tab strip along the bottom of the shell: small text, with only a thin
+ * yellow line marking the current tab. Collecting Pokémon stays the focus.
+ */
+@Composable
+fun DexTabBar(selected: TopTab, onSelect: (TopTab) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        TopTab.entries.forEach { tab ->
+            val isSelected = tab == selected
+            Column(
+                Modifier
+                    .width(112.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(8.dp))
+                    .semantics { this.selected = isSelected }
+                    .clickable(role = Role.Tab) { onSelect(tab) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 24.dp, height = 2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(if (isSelected) DexYellow else Color.Transparent),
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    tab.label.uppercase(),
+                    style = DexText.Label.copy(fontSize = 11.sp, letterSpacing = 1.5.sp),
+                    color = Color.White.copy(alpha = if (isSelected) 0.95f else 0.55f),
+                )
+            }
+        }
+    }
+}
+
 /**
  * The red Pokédex body every screen sits in: hardware strip with the lens and LEDs,
  * a title plate, then the screen content. [floatingAction] is drawn bottom-end.
+ *
+ * When [compact] is true (e.g. while a list is scrolled) the hardware strip folds away and
+ * a small lens moves into the title plate, giving the content more room. [actions] sit at
+ * the end of the title plate.
  */
 @Composable
 fun DexScaffold(
     title: String,
     onBack: (() -> Unit)? = null,
+    compact: Boolean = false,
+    actions: (@Composable () -> Unit)? = null,
+    snackbarHostState: SnackbarHostState? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
     floatingAction: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -77,8 +149,14 @@ fun DexScaffold(
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         Column(Modifier.fillMaxSize()) {
-            HardwareStrip()
-            TitlePlate(title = title, onBack = onBack)
+            AnimatedVisibility(
+                visible = !compact,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                HardwareStrip()
+            }
+            TitlePlate(title = title, onBack = onBack, showLens = compact && onBack == null, actions = actions)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -86,8 +164,17 @@ fun DexScaffold(
                     .padding(horizontal = 12.dp),
                 content = content,
             )
+            bottomBar?.invoke()
         }
         floatingAction?.invoke(this)
+        if (snackbarHostState != null) {
+            DexSnackbarHost(
+                snackbarHostState,
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = if (bottomBar != null) 64.dp else 20.dp),
+            )
+        }
     }
 }
 
@@ -115,8 +202,13 @@ private fun HardwareStrip() {
             }
         }
         Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Led(LedGreen, 9.dp)
+        // The green LED doubles as a connection light: it goes dark while offline.
+        val online = LocalOnline.current
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.semantics { contentDescription = if (online) "Online" else "Offline" },
+        ) {
+            Led(if (online) LedGreen else BezelLight, 9.dp)
             Led(LedYellow, 9.dp)
             Led(LedRed, 9.dp)
         }
@@ -163,7 +255,12 @@ private fun Led(color: Color, size: Dp) {
 }
 
 @Composable
-private fun TitlePlate(title: String, onBack: (() -> Unit)?) {
+private fun TitlePlate(
+    title: String,
+    onBack: (() -> Unit)?,
+    showLens: Boolean,
+    actions: (@Composable () -> Unit)?,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,17 +269,9 @@ private fun TitlePlate(title: String, onBack: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(DexRedDark)
-                    .border(2.dp, DexRedDeep, CircleShape)
-                    .clickable(onClickLabel = "Back", role = Role.Button, onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
+            ShellIconButton(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", onClick = onBack)
+        } else if (showLens) {
+            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Lens(30.dp) }
         } else {
             Spacer(Modifier.width(40.dp))
         }
@@ -197,7 +286,31 @@ private fun TitlePlate(title: String, onBack: (() -> Unit)?) {
                 .padding(horizontal = 8.dp)
                 .semantics { heading() },
         )
-        Spacer(Modifier.width(40.dp))
+        if (actions != null) {
+            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { actions() }
+        } else {
+            Spacer(Modifier.width(40.dp))
+        }
+    }
+}
+
+/** Round button in the red shell, matching the back button; used for title plate actions. */
+@Composable
+fun ShellIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(DexRedDark)
+            .border(2.dp, DexRedDeep, CircleShape)
+            .clickable(onClickLabel = contentDescription, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = Color.White)
     }
 }
 

@@ -33,9 +33,23 @@ class CardRulesTest {
     }
 
     @Test
-    fun `drops alolan and galarian forms`() {
-        assertFalse(CardRules.isAllowed(card("Alolan Vulpix", "Pokémon", "Basic")))
-        assertFalse(CardRules.isAllowed(card("Galarian Ponyta", "Pokémon", "Basic")))
-        assertFalse(CardRules.isAllowed(card("Galarian Moltres V", "Pokémon", "Basic", "V")))
+    fun `flags every regional form alike`() {
+        assertTrue(CardRules.isRegionalForm(card("Alolan Vulpix", "Pokémon", "Basic")))
+        assertTrue(CardRules.isRegionalForm(card("Galarian Moltres V", "Pokémon", "Basic", "V")))
+        assertTrue(CardRules.isRegionalForm(card("Hisuian Zoroark VSTAR", "Pokémon", "VSTAR")))
+        assertTrue(CardRules.isRegionalForm(card("Paldean Wooper", "Pokémon", "Basic")))
+    }
+
+    @Test
+    fun `regional forms are still valid pokemon cards`() {
+        // Whether they count is the user's setting, applied after the rules engine.
+        assertTrue(CardRules.isAllowed(card("Alolan Vulpix", "Pokémon", "Basic")))
+    }
+
+    @Test
+    fun `base forms and regional evolutions are not regional forms`() {
+        assertFalse(CardRules.isRegionalForm(card("Vulpix", "Pokémon", "Basic")))
+        assertFalse(CardRules.isRegionalForm(card("Obstagoon", "Pokémon", "Stage 2")))
+        assertFalse(CardRules.isRegionalForm(card("Sirfetch'd", "Pokémon", "Stage 1")))
     }
 }

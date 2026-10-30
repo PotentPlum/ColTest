@@ -13,6 +13,11 @@ data class TcgCard(
     val releaseDate: String,
     val imageSmall: String,
     val imageLarge: String,
+    /** Alolan, Galarian, Hisuian or Paldean form; only shown when the user counts them. */
+    val regionalForm: Boolean = false,
+    /** Variants it was printed in, in display order; empty when the API doesn't say. */
+    val variants: List<CardVariant> = emptyList(),
+    val prices: CardPrices = CardPrices.NONE,
 ) {
     val releaseYear: String get() = releaseDate.take(4)
 }
