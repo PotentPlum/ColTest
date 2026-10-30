@@ -27,6 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
@@ -51,7 +56,13 @@ import com.potentplum.dextracker.ui.theme.ScreenLine
 import com.potentplum.dextracker.ui.theme.ScreenText
 import com.potentplum.dextracker.ui.theme.ScreenTextDim
 
-/** Search box drawn as a small screen. [onSearch] runs when the keyboard's search key is pressed. */
+/**
+ * Search box drawn as a small screen. [onSearch] runs when the keyboard's search key is pressed,
+ * and [onFocusChange] reports when the keyboard opens for it, so screens can make room.
+ *
+ * [query] must be updated in the same frame as [onQueryChange] (plain Compose state, not a
+ * StateFlow): a text field that's handed back a stale value drops or repeats keystrokes.
+ */
 @Composable
 fun DexSearchField(
     query: String,
@@ -60,53 +71,67 @@ fun DexSearchField(
     contentDescription: String,
     modifier: Modifier = Modifier,
     onSearch: () -> Unit = {},
+    onFocusChange: (Boolean) -> Unit = {},
 ) {
     val focus = LocalFocusManager.current
     DexScreen(modifier.fillMaxWidth(), contentPadding = 0.dp, showGrid = false, shape = RoundedCornerShape(12.dp)) {
-        Row(
-            Modifier
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            singleLine = true,
+            textStyle = DexText.Screen,
+            cursorBrush = SolidColor(ScreenGlow),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = {
+                    focus.clearFocus()
+                    onSearch()
+                },
+            ),
+            modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Search, contentDescription = null, tint = ScreenTextDim)
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.weight(1f)) {
-                if (query.isEmpty()) {
-                    Text(placeholder, style = DexText.Screen, color = ScreenTextDim, maxLines = 1)
-                }
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    textStyle = DexText.Screen,
-                    cursorBrush = SolidColor(ScreenGlow),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = {
-                            focus.clearFocus()
-                            onSearch()
-                        },
-                    ),
-                    modifier = Modifier
+                .onFocusChanged { onFocusChange(it.isFocused) }
+                .semantics { this.contentDescription = contentDescription },
+            // The whole box is the text field, so a tap anywhere in it starts typing.
+            decorationBox = { textField ->
+                Row(
+                    Modifier
                         .fillMaxWidth()
-                        .semantics { this.contentDescription = contentDescription },
-                )
-            }
-            if (query.isNotEmpty()) {
-                Icon(
-                    Icons.Rounded.Close,
-                    contentDescription = "Clear search",
-                    tint = ScreenTextDim,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onQueryChange("") }
-                        .padding(6.dp),
-                )
-            }
-        }
+                        .heightIn(min = 44.dp)
+                        .padding(start = 10.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Search, contentDescription = null, tint = ScreenTextDim)
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.weight(1f)) {
+                        if (query.isEmpty()) {
+                            Text(placeholder, style = DexText.Screen, color = ScreenTextDim, maxLines = 1)
+                        }
+                        textField()
+                    }
+                    if (query.isNotEmpty()) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Clear search",
+                            tint = ScreenTextDim,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { onQueryChange("") }
+                                .padding(10.dp),
+                        )
+                    }
+                }
+            },
+        )
+    }
+}
+
+/** Clears focus, closing the keyboard, as soon as the user drags a list it's attached to. */
+class HideKeyboardOnDrag(private val focusManager: FocusManager) : NestedScrollConnection {
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (source == NestedScrollSource.UserInput) focusManager.clearFocus()
+        return Offset.Zero
     }
 }
 

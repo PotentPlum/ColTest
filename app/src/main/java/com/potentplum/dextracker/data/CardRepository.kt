@@ -119,6 +119,23 @@ class CardRepository(
     }
 
     /**
+     * Changes the variant, condition or language of a line of copies. If that makes it the same
+     * as another line of this card, the two merge into one with the quantities added up.
+     */
+    suspend fun editCopy(copyId: Long, variant: CardVariant, condition: CardCondition, language: CardLanguage) =
+        database.withTransaction {
+            val copy = dao.getCopy(copyId) ?: return@withTransaction
+            val match = dao.findCopy(copy.cardId, variant.key, condition.code, language.code)
+            when {
+                match == null -> dao.setCopyDetails(copy.id, variant.key, condition.code, language.code)
+                match.id != copy.id -> {
+                    dao.setQuantity(match.id, match.quantity + copy.quantity)
+                    dao.deleteCopy(copy.id)
+                }
+            }
+        }
+
+    /**
      * Fetches current Cardmarket prices for every owned card. Returns how many were updated;
      * throws if the card database can't be reached.
      */

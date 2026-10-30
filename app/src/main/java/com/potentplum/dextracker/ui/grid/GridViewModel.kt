@@ -1,6 +1,10 @@
 package com.potentplum.dextracker.ui.grid
 
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.potentplum.dextracker.data.ConnectivityMonitor
@@ -38,7 +42,8 @@ enum class CaughtFilter(val label: String) {
 data class Progress(val generation: Generation?, val caught: Int, val total: Int) {
     val complete: Boolean get() = total > 0 && caught >= total
     val fraction: Float get() = if (total == 0) 0f else caught / total.toFloat()
-    val label: String get() = generation?.label ?: "All"
+    /** "National" rather than "All", so it can't be mistaken for the All / Missing / Caught filter. */
+    val label: String get() = generation?.label ?: "National"
 }
 
 data class GridUiState(
@@ -79,12 +84,18 @@ class GridViewModel(
     private data class Controls(
         val scope: Generation? = null,
         val filter: CaughtFilter = CaughtFilter.ALL,
-        val query: String = "",
     )
 
     private data class SyncState(val syncing: Boolean, val failed: Boolean)
 
     private val controls = MutableStateFlow(Controls())
+
+    /**
+     * The search box text. Compose state rather than part of [uiState], so the field shows each
+     * keystroke immediately; filtering the list follows a moment later.
+     */
+    var query by mutableStateOf("")
+        private set
     private val sync = MutableStateFlow(SyncState(syncing = true, failed = false))
 
     private val _messages = Channel<String>(Channel.BUFFERED)
@@ -98,14 +109,16 @@ class GridViewModel(
         ::Offline,
     )
 
+    private val search = combine(controls, snapshotFlow { query }) { controls, query -> controls to query }
+
     val uiState: StateFlow<GridUiState> = combine(
         repository.observeAll(),
-        controls,
+        search,
         sync,
         settings.includeRegionalForms,
         offline,
-    ) { all, controls, sync, regional, offline ->
-        buildState(all, controls, sync, regional).copy(
+    ) { all, (controls, query), sync, regional, offline ->
+        buildState(all, controls, query, sync, regional).copy(
             online = offline.online,
             savedPages = offline.savedPages,
             download = offline.download,
@@ -138,13 +151,21 @@ class GridViewModel(
     fun cancelOfflineDownload() = downloader.cancel()
 
     /** Picking a tab also clears the search, since a search spans every generation. */
-    fun selectScope(scope: Generation?) = controls.update { it.copy(scope = scope, query = "") }
+    fun selectScope(scope: Generation?) {
+        query = ""
+        controls.update { it.copy(scope = scope) }
+    }
 
     fun selectFilter(filter: CaughtFilter) = controls.update { it.copy(filter = filter) }
 
-    fun setQuery(query: String) = controls.update { it.copy(query = query) }
+    fun updateQuery(query: String) {
+        this.query = query
+    }
 
-    fun clearFilters() = controls.update { it.copy(filter = CaughtFilter.ALL, query = "") }
+    fun clearFilters() {
+        query = ""
+        controls.update { it.copy(filter = CaughtFilter.ALL) }
+    }
 
     fun setIncludeRegionalForms(include: Boolean) = settings.setIncludeRegionalForms(include)
 
@@ -188,12 +209,13 @@ class GridViewModel(
     private fun buildState(
         all: List<PokemonWithCount>,
         controls: Controls,
+        query: String,
         sync: SyncState,
         includeRegionalForms: Boolean,
     ): GridUiState {
         val caughtByGen = all.filter { it.cardCount > 0 }.groupingBy { it.generation }.eachCount()
         val generations = Generation.entries.map { Progress(it, caughtByGen[it.number] ?: 0, it.size) }
-        val searching = controls.query.isNotBlank()
+        val searching = query.isNotBlank()
         val visible = all.filter { pokemon ->
             (searching || controls.scope == null || pokemon.generation == controls.scope.number) &&
                 when (controls.filter) {
@@ -201,12 +223,12 @@ class GridViewModel(
                     CaughtFilter.MISSING -> pokemon.cardCount == 0
                     CaughtFilter.CAUGHT -> pokemon.cardCount > 0
                 } &&
-                DexSearch.matches(controls.query, pokemon.dex, pokemon.name)
+                DexSearch.matches(query, pokemon.dex, pokemon.name)
         }
         return GridUiState(
             scope = controls.scope,
             filter = controls.filter,
-            query = controls.query,
+            query = query,
             pokemon = visible,
             national = Progress(null, generations.sumOf { it.caught }, Generation.MAX_DEX),
             generations = generations,

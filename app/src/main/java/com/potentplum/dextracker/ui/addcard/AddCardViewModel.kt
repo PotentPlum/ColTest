@@ -1,5 +1,9 @@
 package com.potentplum.dextracker.ui.addcard
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.potentplum.dextracker.data.CardRepository
@@ -77,7 +81,6 @@ class AddCardViewModel(
 ) : ViewModel() {
 
     private data class Controls(
-        val query: String = "",
         val setId: String? = null,
         val sort: SortOrder = SortOrder.OLDEST_FIRST,
         val sheetCardId: String? = null,
@@ -100,6 +103,13 @@ class AddCardViewModel(
     private val results = MutableStateFlow(Results())
     private val controls = MutableStateFlow(Controls())
 
+    /**
+     * The search box text. Compose state rather than part of [uiState], so the field shows each
+     * keystroke immediately; the results follow a moment later.
+     */
+    var query by mutableStateOf("")
+        private set
+
     /** Serialises collection writes so rapid taps apply in order against the real state. */
     private val writeLock = Mutex()
 
@@ -115,14 +125,16 @@ class AddCardViewModel(
         ::Environment,
     )
 
+    private val search = combine(controls, snapshotFlow { query }) { controls, query -> controls to query }
+
     val uiState: StateFlow<AddCardUiState> = combine(
         name,
         results,
-        controls,
+        search,
         cards.observeOwned(dex),
         environment,
-    ) { name, results, controls, owned, environment ->
-        buildState(name, results, controls, owned.associateBy { it.card.cardId }, environment)
+    ) { name, results, (controls, query), owned, environment ->
+        buildState(name, results, controls, query, owned.associateBy { it.card.cardId }, environment)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AddCardUiState())
 
     init {
@@ -147,22 +159,14 @@ class AddCardViewModel(
         }
     }
 
-    fun setQuery(query: String) = controls.update { it.copy(query = query) }
+    fun updateQuery(query: String) {
+        this.query = query
+    }
 
     fun selectSet(setId: String?) = controls.update { it.copy(setId = setId) }
 
     fun toggleSort() = controls.update {
         it.copy(sort = if (it.sort == SortOrder.OLDEST_FIRST) SortOrder.NEWEST_FIRST else SortOrder.OLDEST_FIRST)
-    }
-
-    /**
-     * One tap adds a card that only comes in one variant. Cards with several variants, and
-     * cards already owned, open the copies sheet instead.
-     */
-    fun tap(card: TcgCard) {
-        val owned = card.id in uiState.value.ownedIds
-        val options = CardVariant.optionsFor(card.variants)
-        if (!owned && options.size == 1) addCopy(card, options.single()) else openSheet(card)
     }
 
     fun openSheet(card: TcgCard) = controls.update { it.copy(sheetCardId = card.id) }
@@ -186,6 +190,10 @@ class AddCardViewModel(
         viewModelScope.launch { writeLock.withLock { cards.changeQuantity(copyId, delta) } }
     }
 
+    fun editCopy(copyId: Long, variant: CardVariant, condition: CardCondition, language: CardLanguage) {
+        viewModelScope.launch { writeLock.withLock { cards.editCopy(copyId, variant, condition, language) } }
+    }
+
     fun setDefaultCondition(condition: CardCondition) = settings.setDefaultCondition(condition)
 
     fun setDefaultLanguage(language: CardLanguage) = settings.setDefaultLanguage(language)
@@ -194,6 +202,7 @@ class AddCardViewModel(
         name: String,
         results: Results,
         controls: Controls,
+        query: String,
         owned: Map<String, CardWithCopies>,
         environment: Environment,
     ): AddCardUiState {
@@ -208,10 +217,10 @@ class AddCardViewModel(
             }
             .sortedWith(compareBy({ it.year }, { it.name }))
 
-        val query = controls.query.trim()
+        val needle = query.trim()
         val filtered = valid.filter { card ->
             (controls.setId == null || card.setId == controls.setId) &&
-                (query.isEmpty() || card.matches(query))
+                (needle.isEmpty() || card.matches(needle))
         }
 
         val chronological = compareBy<TcgCard>({ it.releaseDate }, { it.setName })
@@ -224,7 +233,7 @@ class AddCardViewModel(
             loading = results.loading,
             failed = results.failed,
             totalValid = valid.size,
-            query = controls.query,
+            query = query,
             sets = sets,
             selectedSetId = controls.setId,
             sortOrder = controls.sort,

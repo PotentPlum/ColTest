@@ -43,7 +43,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
+import com.potentplum.dextracker.ui.components.HideKeyboardOnDrag
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -120,7 +124,7 @@ fun GridScreen(
         GridActions(
             onSelectScope = viewModel::selectScope,
             onSelectFilter = viewModel::selectFilter,
-            onQueryChange = viewModel::setQuery,
+            onQueryChange = viewModel::updateQuery,
             onClearFilters = viewModel::clearFilters,
             onRetry = viewModel::syncSpecies,
             onPokemonClick = onPokemonClick,
@@ -133,7 +137,7 @@ fun GridScreen(
             onSelectTab = onSelectTab,
         )
     }
-    GridContent(state, actions, snackbar)
+    GridContent(state, actions, snackbar, query = viewModel.query)
 }
 
 class GridActions(
@@ -156,10 +160,21 @@ fun GridContent(
     state: GridUiState,
     actions: GridActions,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    /** The search box text, which runs ahead of [GridUiState.query] while typing. */
+    query: String = state.query,
 ) {
     // Hoisted so the position survives a trip to a detail page and back.
     val gridState = rememberLazyGridState()
     val scrolled by remember { derivedStateOf { gridState.firstVisibleItemIndex > 0 } }
+    // While typing, the keyboard takes half the screen: fold away everything but the search
+    // box and the results. Generation tabs don't apply to a search, so they stay hidden
+    // for as long as there's one.
+    var typing by remember { mutableStateOf(false) }
+    val searching = query.isNotBlank()
+    // Dragging the results means the user is done typing: put the keyboard away. Only real
+    // drags count, not the jump back to the top when the search changes.
+    val focusManager = LocalFocusManager.current
+    val hideKeyboardOnDrag = remember(focusManager) { HideKeyboardOnDrag(focusManager) }
 
     // Only a real change of view resets the scroll. Coming back from a detail page
     // re-runs this effect with the same key, and must keep the user where they were.
@@ -174,23 +189,31 @@ fun GridContent(
 
     DexScaffold(
         title = "Pokédex Tracker",
-        compact = scrolled,
+        compact = scrolled || typing,
         actions = { OverflowMenu(state, actions) },
         snackbarHostState = snackbarHostState,
         bottomBar = { DexTabBar(TopTab.POKEDEX, actions.onSelectTab) },
     ) {
-        NationalCounter(state, onCancelDownload = actions.onCancelOfflineDownload)
-        Spacer(Modifier.height(8.dp))
+        // Once the grid is scrolled the counter folds away too; the National tab keeps the count.
+        AnimatedVisibility(visible = !typing && !scrolled) {
+            Column {
+                NationalCounter(state, onCancelDownload = actions.onCancelOfflineDownload)
+                Spacer(Modifier.height(8.dp))
+            }
+        }
         DexSearchField(
-            query = state.query,
+            query = query,
             onQueryChange = actions.onQueryChange,
             placeholder = "Find a Pokémon: name or #",
             contentDescription = "Search Pokémon by name or number",
             // Pressing search with a single result opens it straight away.
             onSearch = { state.pokemon.singleOrNull()?.let { actions.onPokemonClick(it.dex) } },
+            onFocusChange = { typing = it },
         )
         Spacer(Modifier.height(8.dp))
-        GenerationTabs(state, actions.onSelectScope)
+        AnimatedVisibility(visible = !searching && !typing) {
+            GenerationTabs(state, actions.onSelectScope)
+        }
         DexSegmentedControl(
             options = CaughtFilter.entries,
             selected = state.filter,
@@ -205,7 +228,12 @@ fun GridContent(
                 .padding(bottom = 12.dp),
         ) {
             when {
-                state.pokemon.isNotEmpty() -> PokemonGrid(state.pokemon, gridState, actions.onPokemonClick)
+                state.pokemon.isNotEmpty() -> PokemonGrid(
+                    pokemon = state.pokemon,
+                    gridState = gridState,
+                    onPokemonClick = actions.onPokemonClick,
+                    modifier = Modifier.nestedScroll(hideKeyboardOnDrag),
+                )
                 state.searching || state.filter != CaughtFilter.ALL -> EmptyResults(
                     state = state,
                     onClear = actions.onClearFilters,
@@ -329,7 +357,7 @@ private fun GenerationTabs(state: GridUiState, onSelect: (Generation?) -> Unit) 
                 selected = progress.generation == state.scope && !state.searching,
                 onClick = { onSelect(progress.generation) },
                 modifier = Modifier
-                    .width(if (progress.generation == null) 88.dp else 80.dp)
+                    .width(if (progress.generation == null) 100.dp else 80.dp)
                     .semantics {
                         contentDescription = "${progress.label}, ${progress.caught} of ${progress.total} caught"
                     },
@@ -457,6 +485,7 @@ private fun PokemonGrid(
     pokemon: List<PokemonWithCount>,
     gridState: LazyGridState,
     onPokemonClick: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     LazyVerticalGrid(
         state = gridState,
@@ -464,7 +493,7 @@ private fun PokemonGrid(
         contentPadding = PaddingValues(4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
     ) {
         items(pokemon, key = { it.dex }) { entry ->
             PokemonTile(entry, onClick = { onPokemonClick(entry.dex) })

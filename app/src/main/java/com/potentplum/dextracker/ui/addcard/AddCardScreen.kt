@@ -40,6 +40,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
+import com.potentplum.dextracker.ui.components.HideKeyboardOnDrag
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -118,13 +121,14 @@ fun AddCardScreen(
     }
     val actions = remember(viewModel) {
         AddCardActions(
-            onQueryChange = viewModel::setQuery,
+            onQueryChange = viewModel::updateQuery,
             onSelectSet = viewModel::selectSet,
             onToggleSort = viewModel::toggleSort,
-            onTapCard = viewModel::tap,
+            onTapCard = viewModel::openSheet,
             onRetry = { viewModel.load(forceRefresh = true) },
             onAddCopy = viewModel::addCopy,
             onChangeQuantity = viewModel::changeQuantity,
+            onEditCopy = viewModel::editCopy,
             onCloseSheet = viewModel::closeSheet,
             onConditionChange = viewModel::setDefaultCondition,
             onLanguageChange = viewModel::setDefaultLanguage,
@@ -133,6 +137,7 @@ fun AddCardScreen(
     AddCardContent(
         state = state,
         actions = actions,
+        query = viewModel.query,
         onBack = onBack,
         snackbarHostState = snackbar,
         celebration = celebration,
@@ -143,8 +148,8 @@ fun AddCardScreen(
 private fun CardAdded.message(): String {
     val details = listOfNotNull(
         key.variant.takeIf { card.variants.size > 1 }?.label,
-        key.condition.code,
-        key.language.code,
+        key.condition.label,
+        key.language.label,
     ).joinToString(" · ")
     return "Added ${card.setName} #${card.number} · $details"
 }
@@ -165,6 +170,7 @@ class AddCardActions(
     val onRetry: () -> Unit,
     val onAddCopy: (TcgCard, CardVariant) -> Unit,
     val onChangeQuantity: (copyId: Long, delta: Int) -> Unit,
+    val onEditCopy: (copyId: Long, CardVariant, CardCondition, CardLanguage) -> Unit,
     val onCloseSheet: () -> Unit,
     val onConditionChange: (CardCondition) -> Unit,
     val onLanguageChange: (CardLanguage) -> Unit,
@@ -178,15 +184,20 @@ fun AddCardContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     celebration: Celebration? = null,
     onCelebrationDone: () -> Unit = {},
+    /** The search box text, which runs ahead of [AddCardUiState.query] while typing. */
+    query: String = state.query,
 ) {
     var preview by remember { mutableStateOf<TcgCard?>(null) }
+    // Fold the hardware strip away while the keyboard is up, to keep results in view.
+    var typing by remember { mutableStateOf(false) }
 
     DexScaffold(
         title = if (state.pokemonName.isBlank()) "Add card" else "Add ${state.pokemonName} card",
         onBack = onBack,
+        compact = typing,
         snackbarHostState = snackbarHostState,
     ) {
-        Controls(state, actions)
+        Controls(state, query, actions, onTypingChange = { typing = it })
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier
@@ -264,6 +275,7 @@ fun AddCardContent(
             onLanguageChange = actions.onLanguageChange,
             onAdd = { variant -> actions.onAddCopy(card, variant) },
             onChangeQuantity = actions.onChangeQuantity,
+            onEditCopy = actions.onEditCopy,
             onZoom = { preview = card },
             onDismiss = actions.onCloseSheet,
         )
@@ -284,13 +296,19 @@ private fun TcgCard.subtitle() =
     listOfNotNull(setName, "#$number", releaseYear, rarity).joinToString(" · ")
 
 @Composable
-private fun Controls(state: AddCardUiState, actions: AddCardActions) {
+private fun Controls(
+    state: AddCardUiState,
+    query: String,
+    actions: AddCardActions,
+    onTypingChange: (Boolean) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         DexSearchField(
-            query = state.query,
+            query = query,
             onQueryChange = actions.onQueryChange,
             placeholder = "Search set, number, rarity…",
             contentDescription = "Search cards",
+            onFocusChange = onTypingChange,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SetDropdown(
@@ -320,7 +338,7 @@ private fun Controls(state: AddCardUiState, actions: AddCardActions) {
                 text = buildString {
                     if (state.cards.size == state.totalValid) append("${state.totalValid} CARDS")
                     else append("${state.cards.size} OF ${state.totalValid}")
-                    append(" · $ownedHere OWNED · TAP TO ADD, HOLD TO ZOOM")
+                    append(" · $ownedHere OWNED · TAP A CARD TO ADD IT")
                 },
                 style = DexText.ScreenSmall.copy(fontSize = 10.sp),
                 color = Color.White.copy(alpha = 0.85f),
@@ -409,6 +427,8 @@ private fun ResultsGrid(
 ) {
     val gridState = rememberLazyGridState()
     LaunchedEffect(state.selectedSetId, state.sortOrder) { gridState.scrollToItem(0) }
+    val focusManager = LocalFocusManager.current
+    val hideKeyboardOnDrag = remember(focusManager) { HideKeyboardOnDrag(focusManager) }
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Adaptive(minSize = 100.dp),
@@ -421,7 +441,9 @@ private fun ResultsGrid(
         ),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(hideKeyboardOnDrag),
     ) {
         items(state.cards, key = { it.id }) { card ->
             ResultCard(
@@ -443,14 +465,13 @@ private fun ResultCard(
     onLongClick: () -> Unit,
 ) {
     val owned = ownedCopies > 0
-    val opensSheet = owned || card.variants.size > 1
     val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = Modifier
             .clip(shape)
             .combinedClickable(
                 role = Role.Button,
-                onClickLabel = if (opensSheet) "Choose variant and copies" else "Add to collection",
+                onClickLabel = if (owned) "Edit copies" else "View and add",
                 onLongClickLabel = "Zoom",
                 onClick = onClick,
                 onLongClick = onLongClick,
