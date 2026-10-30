@@ -42,7 +42,8 @@ enum class CaughtFilter(val label: String) {
 data class Progress(val generation: Generation?, val caught: Int, val total: Int) {
     val complete: Boolean get() = total > 0 && caught >= total
     val fraction: Float get() = if (total == 0) 0f else caught / total.toFloat()
-    val label: String get() = generation?.label ?: "All"
+    /** "National" rather than "All", so it can't be mistaken for the All / Missing / Caught filter. */
+    val label: String get() = generation?.label ?: "National"
 }
 
 data class GridUiState(

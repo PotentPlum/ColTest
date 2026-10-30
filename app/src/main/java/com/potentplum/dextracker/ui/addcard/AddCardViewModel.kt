@@ -190,6 +190,10 @@ class AddCardViewModel(
         viewModelScope.launch { writeLock.withLock { cards.changeQuantity(copyId, delta) } }
     }
 
+    fun editCopy(copyId: Long, variant: CardVariant, condition: CardCondition, language: CardLanguage) {
+        viewModelScope.launch { writeLock.withLock { cards.editCopy(copyId, variant, condition, language) } }
+    }
+
     fun setDefaultCondition(condition: CardCondition) = settings.setDefaultCondition(condition)
 
     fun setDefaultLanguage(language: CardLanguage) = settings.setDefaultLanguage(language)

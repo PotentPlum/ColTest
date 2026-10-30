@@ -133,6 +133,9 @@ interface CollectionDao {
     @Query("UPDATE owned_copy SET quantity = :quantity WHERE id = :id")
     suspend fun setQuantity(id: Long, quantity: Int)
 
+    @Query("UPDATE owned_copy SET variant = :variant, condition = :condition, language = :language WHERE id = :id")
+    suspend fun setCopyDetails(id: Long, variant: String, condition: String, language: String)
+
     @Query("DELETE FROM owned_copy WHERE id = :id")
     suspend fun deleteCopy(id: Long)
 

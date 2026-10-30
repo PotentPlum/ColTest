@@ -102,6 +102,7 @@ fun DetailScreen(
             onRetry = viewModel::loadDetail,
             onAddCopy = viewModel::addCopy,
             onChangeQuantity = viewModel::changeQuantity,
+            onEditCopy = viewModel::editCopy,
             onConditionChange = viewModel::setDefaultCondition,
             onLanguageChange = viewModel::setDefaultLanguage,
         )
@@ -124,6 +125,7 @@ class DetailActions(
     val onRetry: () -> Unit,
     val onAddCopy: (CardWithCopies, CardVariant) -> Unit,
     val onChangeQuantity: (copyId: Long, delta: Int) -> Unit,
+    val onEditCopy: (copyId: Long, CardVariant, CardCondition, CardLanguage) -> Unit,
     val onConditionChange: (CardCondition) -> Unit,
     val onLanguageChange: (CardLanguage) -> Unit,
 )
@@ -225,6 +227,7 @@ fun DetailContent(
             onLanguageChange = actions.onLanguageChange,
             onAdd = { variant -> actions.onAddCopy(open, variant) },
             onChangeQuantity = actions.onChangeQuantity,
+            onEditCopy = actions.onEditCopy,
             onZoom = { zoomCard = open.card },
             onDismiss = { openCardId = null },
         )

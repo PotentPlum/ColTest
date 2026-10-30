@@ -46,16 +46,18 @@ The rules are covered by `CardRulesTest`.
 
 1. **National Dex grid**
    * A **National Dex counter** ("37 / 1025 CAUGHT", with a percentage and progress bar).
-   * A scrolling row of tabs: **All**, then **Gen 1** to **Gen 9**, each showing its own
+   * A scrolling row of tabs: **National**, then **Gen 1** to **Gen 9**, each showing its own
      progress ("GEN 2 · 4/100"). A ✓ marks a completed generation.
    * An **All / Missing / Caught** filter. "Missing" is your to-catch list.
    * **Search** by name or number. "pika", "mr mime", "flabebe", "25" and "#025" all work. A
      search covers every generation. Pressing search when there's exactly one match opens it.
-     While you type, the header and generation tabs fold away so the results stay in view.
+     While you type, the header and generation tabs fold away so the results stay in view, and
+     dragging the results closes the keyboard.
    * Each tile shows the number, the name and a sprite. Pokémon you have no cards for are gray.
      Collected ones are in color with a yellow badge showing how many unique variants you own.
    * The scroll position is kept when you come back from a Pokémon. The Pokédex hardware strip
-     folds away while you scroll so the grid gets more room.
+     and the National Dex counter fold away while you scroll so the grid gets more room (the
+     National tab still shows the count).
    * **⋮ menu**: back up the collection, restore from a backup, save the Pokédex for offline
      use, and count regional forms.
 2. **Pokédex Detail**: the top half shows PokeAPI data (name, Dex #, types, height, weight,
@@ -63,8 +65,11 @@ The rules are covered by `CardRulesTest`.
    you have and which variant. **Tap a card to edit it** in the copies sheet:
    * Every line of copies (variant · condition · language) has a quantity stepper. The trash
      icon removes the last copy of a line.
-   * Below the list you can add another copy: pick the condition (Cardmarket scale: M, NM, EX,
-     GD, LP, PL, PO) and the language, then tap the variant.
+   * Tap a line to change its variant, condition or language. If that makes it identical to
+     another line, the two merge and their quantities add up.
+   * Below the list you can add another copy: pick the condition (Cardmarket scale: Mint,
+     Near Mint, Excellent, Good, Light Played, Played, Poor) and the language, then tap the
+     variant. The add button spells out what it adds, e.g. **ADD · NEAR MINT · ENGLISH**.
 
    The yellow **ADD CARD** button sits bottom-right.
 3. **Add Card (auto-query)**: opening it immediately searches for every valid card of that

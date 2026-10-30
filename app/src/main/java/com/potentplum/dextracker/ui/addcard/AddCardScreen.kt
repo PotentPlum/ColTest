@@ -40,6 +40,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
+import com.potentplum.dextracker.ui.components.HideKeyboardOnDrag
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -125,6 +128,7 @@ fun AddCardScreen(
             onRetry = { viewModel.load(forceRefresh = true) },
             onAddCopy = viewModel::addCopy,
             onChangeQuantity = viewModel::changeQuantity,
+            onEditCopy = viewModel::editCopy,
             onCloseSheet = viewModel::closeSheet,
             onConditionChange = viewModel::setDefaultCondition,
             onLanguageChange = viewModel::setDefaultLanguage,
@@ -144,8 +148,8 @@ fun AddCardScreen(
 private fun CardAdded.message(): String {
     val details = listOfNotNull(
         key.variant.takeIf { card.variants.size > 1 }?.label,
-        key.condition.code,
-        key.language.code,
+        key.condition.label,
+        key.language.label,
     ).joinToString(" · ")
     return "Added ${card.setName} #${card.number} · $details"
 }
@@ -166,6 +170,7 @@ class AddCardActions(
     val onRetry: () -> Unit,
     val onAddCopy: (TcgCard, CardVariant) -> Unit,
     val onChangeQuantity: (copyId: Long, delta: Int) -> Unit,
+    val onEditCopy: (copyId: Long, CardVariant, CardCondition, CardLanguage) -> Unit,
     val onCloseSheet: () -> Unit,
     val onConditionChange: (CardCondition) -> Unit,
     val onLanguageChange: (CardLanguage) -> Unit,
@@ -270,6 +275,7 @@ fun AddCardContent(
             onLanguageChange = actions.onLanguageChange,
             onAdd = { variant -> actions.onAddCopy(card, variant) },
             onChangeQuantity = actions.onChangeQuantity,
+            onEditCopy = actions.onEditCopy,
             onZoom = { preview = card },
             onDismiss = actions.onCloseSheet,
         )
@@ -421,6 +427,8 @@ private fun ResultsGrid(
 ) {
     val gridState = rememberLazyGridState()
     LaunchedEffect(state.selectedSetId, state.sortOrder) { gridState.scrollToItem(0) }
+    val focusManager = LocalFocusManager.current
+    val hideKeyboardOnDrag = remember(focusManager) { HideKeyboardOnDrag(focusManager) }
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Adaptive(minSize = 100.dp),
@@ -433,7 +441,9 @@ private fun ResultsGrid(
         ),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(hideKeyboardOnDrag),
     ) {
         items(state.cards, key = { it.id }) { card ->
             ResultCard(

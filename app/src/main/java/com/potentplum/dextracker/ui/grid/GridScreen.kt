@@ -45,6 +45,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
+import com.potentplum.dextracker.ui.components.HideKeyboardOnDrag
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -168,6 +171,10 @@ fun GridContent(
     // for as long as there's one.
     var typing by remember { mutableStateOf(false) }
     val searching = query.isNotBlank()
+    // Dragging the results means the user is done typing: put the keyboard away. Only real
+    // drags count, not the jump back to the top when the search changes.
+    val focusManager = LocalFocusManager.current
+    val hideKeyboardOnDrag = remember(focusManager) { HideKeyboardOnDrag(focusManager) }
 
     // Only a real change of view resets the scroll. Coming back from a detail page
     // re-runs this effect with the same key, and must keep the user where they were.
@@ -187,7 +194,8 @@ fun GridContent(
         snackbarHostState = snackbarHostState,
         bottomBar = { DexTabBar(TopTab.POKEDEX, actions.onSelectTab) },
     ) {
-        AnimatedVisibility(visible = !typing) {
+        // Once the grid is scrolled the counter folds away too; the National tab keeps the count.
+        AnimatedVisibility(visible = !typing && !scrolled) {
             Column {
                 NationalCounter(state, onCancelDownload = actions.onCancelOfflineDownload)
                 Spacer(Modifier.height(8.dp))
@@ -220,7 +228,12 @@ fun GridContent(
                 .padding(bottom = 12.dp),
         ) {
             when {
-                state.pokemon.isNotEmpty() -> PokemonGrid(state.pokemon, gridState, actions.onPokemonClick)
+                state.pokemon.isNotEmpty() -> PokemonGrid(
+                    pokemon = state.pokemon,
+                    gridState = gridState,
+                    onPokemonClick = actions.onPokemonClick,
+                    modifier = Modifier.nestedScroll(hideKeyboardOnDrag),
+                )
                 state.searching || state.filter != CaughtFilter.ALL -> EmptyResults(
                     state = state,
                     onClear = actions.onClearFilters,
@@ -344,7 +357,7 @@ private fun GenerationTabs(state: GridUiState, onSelect: (Generation?) -> Unit) 
                 selected = progress.generation == state.scope && !state.searching,
                 onClick = { onSelect(progress.generation) },
                 modifier = Modifier
-                    .width(if (progress.generation == null) 88.dp else 80.dp)
+                    .width(if (progress.generation == null) 100.dp else 80.dp)
                     .semantics {
                         contentDescription = "${progress.label}, ${progress.caught} of ${progress.total} caught"
                     },
@@ -472,6 +485,7 @@ private fun PokemonGrid(
     pokemon: List<PokemonWithCount>,
     gridState: LazyGridState,
     onPokemonClick: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     LazyVerticalGrid(
         state = gridState,
@@ -479,7 +493,7 @@ private fun PokemonGrid(
         contentPadding = PaddingValues(4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
     ) {
         items(pokemon, key = { it.dex }) { entry ->
             PokemonTile(entry, onClick = { onPokemonClick(entry.dex) })
